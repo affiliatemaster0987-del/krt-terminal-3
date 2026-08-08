@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KRT AI Terminal 2.2 — LIVE · Angel One</title>
+<title>KRT AI Terminal 3.0 — LIVE · Angel One</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Archivo:wght@500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -11,7 +11,7 @@
 <body>
 
 <div class="cmdbar"><div class="cmdbar-in">
-  <div class="logo"><span>⚡</span>KRT <b>AI 2.2</b></div>
+  <div class="logo"><span>⚡</span>KRT <b>AI 3.0</b></div>
   <div class="mkt-score">
     <div class="score-ring">
       <svg width="38" height="38"><circle cx="19" cy="19" r="15" fill="none" stroke="#1c2436" stroke-width="4"/>
@@ -31,143 +31,120 @@
   </div>
 </div></div>
 
+<!-- CRASH BANNER -->
+<div id="crashBanner" class="crash-banner" style="display:none"></div>
+
 <main>
 <div class="grid">
 
-  <div class="card w12" style="background:linear-gradient(135deg, rgba(22,214,122,.07), var(--panel) 45%, rgba(245,184,64,.05));border-color:rgba(22,214,122,.35)" >
-    <h2><span class="ic">🎰</span> KRT Jackpots — Today's Top Signals <span class="tag live" id="jpsTag">AUTO · LIVE DATA</span></h2>
-    <div class="jps-grid" id="jpsGrid"></div>
+  <!-- ══ JACKPOT LIST ══ -->
+  <div class="card w6 glow-bull">
+    <h2><span class="ic">🎰</span> JACKPOT LIST — BUY Calls <span class="tag live" id="jpTag">--</span>
+      <button class="btn wa" id="jpSendAll" style="margin-left:8px">🟢 Send all to WhatsApp</button></h2>
+    <div class="feed" id="jackpotList" style="max-height:460px"></div>
   </div>
 
-  <div class="card">
-    <h2><span class="ic">📈</span> Multi-Timeframe Trend</h2>
-    <div class="mtf" id="mtfGrid"></div>
-    <div class="conviction" id="convictionBox">🚀 HIGH CONVICTION — Market aligned</div>
-    <div class="row" style="margin-top:8px"><span>EMA Stack</span><b class="up">9 &gt; 21 &gt; 50 &gt; 200 ✅</b></div>
+  <!-- ══ DANGER LIST ══ -->
+  <div class="card w6 glow-bear">
+    <h2><span class="ic">💀</span> DANGER LIST — Crash / SELL Calls <span class="tag bearTag" id="dgTag">--</span>
+      <button class="btn wa" id="dgSendAll" style="margin-left:8px">🟢 Send all to WhatsApp</button></h2>
+    <div class="feed" id="dangerList" style="max-height:460px"></div>
   </div>
 
-  <div class="card">
-    <h2><span class="ic">🧠</span> AI Confidence Meter</h2>
-    <div id="meters"></div>
-    <div class="total-score"><b id="confTotal">--</b><span>/100 — weighted composite</span></div>
-  </div>
-
+  <!-- ══ NEWS JACKPOT / NEWS DANGER ══ -->
   <div class="card w6">
-    <h2><span class="ic">▲</span> Top Gainers — All Stocks <span class="tag live" id="gTag">LIVE · ANGEL ONE</span></h2>
+    <h2><span class="ic">📰</span> NEWS JACKPOT — Positive News Calls <span class="tag live">FAST</span></h2>
+    <div class="feed" id="newsJackpot" style="max-height:300px"></div>
+  </div>
+  <div class="card w6">
+    <h2><span class="ic">🚨</span> NEWS DANGER — Negative / Crash <span class="tag bearTag">FAST</span></h2>
+    <div class="feed" id="newsDanger" style="max-height:300px"></div>
+  </div>
+
+  <!-- ══ BREAKOUT LISTS ══ -->
+  <div class="card">
+    <h2><span class="ic">⤴</span> Prev Day High Break <span class="tag live" id="pdhTag">--</span></h2>
+    <div class="feed" id="pdhList" style="max-height:280px"></div>
+  </div>
+  <div class="card">
+    <h2><span class="ic">📅</span> Prev Week High Break <span class="tag live" id="pwhTag">--</span></h2>
+    <div class="feed" id="pwhList" style="max-height:280px"></div>
+  </div>
+  <div class="card">
+    <h2><span class="ic">🕘</span> 1st 5-min Candle High Break <span class="tag live" id="orTag">--</span></h2>
+    <div class="feed" id="orList" style="max-height:280px"></div>
+  </div>
+
+  <!-- ══ SECTOR — STRONG ══ -->
+  <div class="card w6">
+    <h2><span class="ic">🏭</span> STRONG SECTORS — best stocks <span class="tag live">LIVE</span></h2>
+    <div id="strongSectors"></div>
+  </div>
+
+  <!-- ══ SECTOR — WEAK ══ -->
+  <div class="card w6">
+    <h2><span class="ic">📉</span> WEAK SECTORS — weak stocks <span class="tag bearTag">LIVE</span></h2>
+    <div id="weakSectors"></div>
+  </div>
+
+  <!-- ══ GAINERS / LOSERS ══ -->
+  <div class="card w6">
+    <h2><span class="ic">▲</span> Top Gainers — All Stocks <span class="tag live" id="gTag">LIVE</span></h2>
     <div class="scrollT"><table>
-      <thead><tr><th>#</th><th>Stock</th><th>LTP</th><th>Chg%</th><th>H / L</th><th>Vol</th><th>Chart</th></tr></thead>
+      <thead><tr><th>#</th><th>Stock</th><th>Sector</th><th>LTP</th><th>Chg%</th><th>H / L</th><th>Vol</th></tr></thead>
       <tbody id="gainT"></tbody>
     </table></div>
   </div>
-
   <div class="card w6">
-    <h2><span class="ic">▼</span> Top Losers — All Stocks <span class="tag live" id="lTag">LIVE · ANGEL ONE</span></h2>
+    <h2><span class="ic">▼</span> Top Losers — All Stocks <span class="tag bearTag" id="lTag">LIVE</span></h2>
     <div class="scrollT"><table>
-      <thead><tr><th>#</th><th>Stock</th><th>LTP</th><th>Chg%</th><th>H / L</th><th>Vol</th><th>Chart</th></tr></thead>
+      <thead><tr><th>#</th><th>Stock</th><th>Sector</th><th>LTP</th><th>Chg%</th><th>H / L</th><th>Vol</th></tr></thead>
       <tbody id="loseT"></tbody>
     </table></div>
   </div>
 
-  <div class="card brk-list">
-    <h2><span class="ic">⤴</span> Day High Breaks · LIVE <span class="tag live">CALLS</span></h2>
-    <div id="pdList"></div>
+  <!-- ══ WHATSAPP SETUP ══ -->
+  <div class="card w6">
+    <h2><span class="ic">📲</span> WhatsApp Alerts <span class="tag set">SETUP</span></h2>
+    <div class="cn-grid">
+      <div><label>WHATSAPP NUMBER (country code-oda, e.g. 9198xxxxxxxx)</label><input id="waNum" placeholder="9198xxxxxxxx"></div>
+      <div class="btnrow">
+        <button class="btn pri" id="alSave">Save</button>
+        <button class="btn wa" id="waTest">🟢 Test message</button>
+      </div>
+      <div class="status" id="alStatus">Number save pannunga — jackpot / danger alerts WhatsApp-la open agum.</div>
+    </div>
+    <div class="hint">Ovvoru jackpot card-layum <b>🟢 WA</b> button iruku — click pannina antha signal WhatsApp-la ready-a open agum, one tap send.</div>
   </div>
 
-  <div class="card brk-list">
-    <h2><span class="ic">📅</span> Strong Movers · LIVE <span class="tag live">CALLS</span></h2>
-    <div id="pwList"></div>
-  </div>
-
-  <div class="card brk-list">
-    <h2><span class="ic">🗓</span> Volume Leaders · LIVE <span class="tag live">CALLS</span></h2>
-    <div id="pmList"></div>
-  </div>
-
-  <div class="card w8">
-    <h2><span class="ic">📊</span> TradingView Live Chart <span class="tag live">CONNECTED</span></h2>
-    <div class="tv-syms" id="tvSyms"></div>
-    <div class="tvwrap" id="tvChart"></div>
-  </div>
-
-  <div class="card">
+  <!-- ══ CHARTINK ══ -->
+  <div class="card w6">
     <h2><span class="ic">🔗</span> Chartink Connect <span class="tag set">SETUP</span></h2>
     <div class="cn-grid">
-      <div><label>CHARTINK WEBHOOK RECEIVER URL (your backend)</label>
+      <div><label>WEBHOOK RECEIVER URL</label>
       <input id="ckUrl" placeholder="https://krt-terminal-3.onrender.com/webhook/chartink"></div>
       <div class="btnrow">
         <button class="btn pri" id="ckSave">Save</button>
-        <button class="btn" id="ckTest">Simulate alert</button>
       </div>
       <div class="status" id="ckStatus">Not configured</div>
     </div>
-    <div class="qlinks" style="margin-top:8px">
-      <label style="font-size:.62rem;color:var(--dim);display:block;margin-bottom:4px">QUICK SCANNERS</label>
-      <a href="https://chartink.com/screener/pdh-break-with-volume" target="_blank" rel="noopener">PDH Break</a>
-      <a href="https://chartink.com/screener/previous-week-high-breakout" target="_blank" rel="noopener">PWH Break</a>
-      <a href="https://chartink.com/screener/month-high-breakout" target="_blank" rel="noopener">PMH Break</a>
-      <a href="https://chartink.com/screener/top-gainers-live" target="_blank" rel="noopener">Top Gainers</a>
-      <a href="https://chartink.com/screener/top-losers-live" target="_blank" rel="noopener">Top Losers</a>
-    </div>
-    <div class="hint">Chartink scanner → <b>Create Alert</b> → Webhook URL-la unga backend endpoint paste pannunga. Scanner hit aana alerts feed-la varum.</div>
+    <div class="hint">Chartink scanner → Create Alert → Webhook URL paste. Scanner hit aana Live Alerts feed-la varum.</div>
   </div>
 
+  <!-- ══ ALERTS + NEWS FEED ══ -->
   <div class="card w6">
-    <h2><span class="ic">📲</span> Jackpot Alerts → Telegram / WhatsApp <span class="tag set">SETUP</span></h2>
-    <div class="cn-grid">
-      <div><label>TELEGRAM BOT TOKEN (from @BotFather)</label><input id="tgToken" placeholder="123456:ABC-xyz..."></div>
-      <div><label>TELEGRAM CHAT ID (from @userinfobot)</label><input id="tgChat" placeholder="e.g. 5512345678"></div>
-      <div><label>WHATSAPP NUMBER (with country code)</label><input id="waNum" placeholder="e.g. 9198xxxxxxxx"></div>
-      <div class="btnrow">
-        <button class="btn pri" id="alSave">Save</button>
-        <button class="btn tg" id="tgTest">✈ Send test to Telegram</button>
-        <button class="btn wa" id="waTest">🟢 Open WhatsApp with signal</button>
-      </div>
-      <div class="status" id="alStatus">Enter details &amp; save — live jackpots auto-send to Telegram.</div>
-    </div>
-    <div class="hint">
-      <b>Telegram:</b> Fully automatic ✅ — token + chat id save pannina, new live jackpot generate aana udane Telegram-ku pogum.<br>
-      <b>WhatsApp:</b> Button click pannina signal ready-a WhatsApp-la open agum — one tap send.
-    </div>
+    <h2><span class="ic">🔔</span> Live Alerts <span class="tag live">FEED</span></h2>
+    <div class="feed" id="alertFeed" style="max-height:320px"></div>
   </div>
-
   <div class="card w6">
-    <h2><span class="ic">📰</span> News AI — Score · Sentiment <span class="tag live">LIVE FEED</span></h2>
-    <div id="newsList"></div>
-  </div>
-
-  <div class="card w3">
-    <h2><span class="ic">🏭</span> Sector Rotation</h2>
-    <div class="heat" id="heatmap" style="grid-template-columns:repeat(2,1fr)"></div>
-  </div>
-  <div class="card w3">
-    <h2><span class="ic">🚨</span> Live Alerts <span class="tag live">FEED</span></h2>
-    <div class="feed" id="alertFeed"></div>
-  </div>
-
-  <div class="card w12">
-    <h2><span class="ic">⭐</span> Watchlist Ranking — Top 10 · LIVE</h2>
-    <div style="overflow-x:auto">
-    <table>
-      <thead><tr><th>#</th><th>Stock</th><th>Score</th><th>Probability</th><th>Risk</th><th>Chg%</th><th>Volume</th><th>Signal</th><th>Chart</th><th>Action</th></tr></thead>
-      <tbody id="wlTable"></tbody>
-    </table></div>
-  </div>
-
-  <div class="card jackpot glow-bull">
-    <h2><span class="ic">🎯</span> Jackpot Filter Engine — 18-Filter Multi-Confirmation <span class="tag live" id="jpTag">--</span>
-      <button class="btn tg" id="jpSendAll" style="margin-left:8px">✈ Send all jackpots to Telegram</button></h2>
-    <div class="jp-progress">
-      <div class="lbls"><span>Min 15 filters pass aana dhan signal generate agum</span><span id="jpCount">--</span></div>
-      <div class="jp-track"><div class="mk" style="left:83.3%"></div><div class="fill" id="jpFill" style="width:0%"></div></div>
-    </div>
-    <div class="filters" id="jpFilters"></div>
-    <div class="verdict"><b>🤖 Engine Rule:</b> Momentum + Volume + Breadth + Sector + Trend — ellam confirm aana mattum jackpot list-la varum.</div>
+    <h2><span class="ic">📡</span> All News — Sentiment <span class="tag live">LIVE FEED</span></h2>
+    <div class="feed" id="newsList" style="max-height:320px"></div>
   </div>
 
 </div>
 
 <footer>
-  KRT AI Terminal 2.2 · LIVE via Angel One · Educational &amp; personal-use tool · Not investment advice · SEBI RA registration required for public advisory services
+  KRT AI Terminal 3.0 · <span id="uniCount">--</span> stocks live via Angel One · Educational &amp; personal use · Not investment advice · SEBI RA registration required for public advisory
 </footer>
 </main>
 
