@@ -1,4 +1,4 @@
-"""KRT AI Terminal v2 — Flask server (Render-ready)."""
+"""KRT AI Terminal v3 — Flask server (Render-ready)."""
 import os
 from flask import Flask, jsonify, render_template, request
 from smart_client import build_dashboard
@@ -50,10 +50,6 @@ def api_news():
 
 @app.route("/webhook/chartink", methods=["POST"])
 def chartink_webhook():
-    """Chartink alert webhook receiver.
-    Chartink → Scanner → Create Alert → Webhook URL:
-      https://<your-app>.onrender.com/webhook/chartink
-    """
     try:
         payload = request.get_json(force=True, silent=True) or {}
         n = add_chartink_alert(payload)
@@ -70,3 +66,4 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
