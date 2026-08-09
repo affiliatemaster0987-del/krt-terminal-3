@@ -79,6 +79,7 @@ function buildJackpots(stocks, brk, sectorRank){
       if(or5.has(r.symbol))tags.push('5min High Break');
       const secRank = sectorRank[r.sector]||99;
       if(secRank<=3)tags.push('Sector Top-3');
+      if(gapUpSet.has(r.symbol))tags.push('Gap Up Open');
       let score = 50 + Math.min(25,Math.round(r.chg*4)) + tags.length*7;
       if((r.volume||0)>1e7)score+=6;
       score=Math.min(99,score);
@@ -98,6 +99,7 @@ function buildDangers(stocks, brk, sectorRank, total){
       if(pdl.has(r.symbol))tags.push('PDL Breakdown');
       const secRank = sectorRank[r.sector]||99;
       if(secRank>=total-3)tags.push('Weak Sector');
+      if(gapDownSet.has(r.symbol))tags.push('Gap Down Open');
       if((r.volume||0)>1e7)tags.push('Heavy Vol Selling');
       let score=50+Math.min(28,Math.round(Math.abs(r.chg)*4))+tags.length*7;
       score=Math.min(99,score);
@@ -145,6 +147,32 @@ function waJP(i){ openWA(jpMsg(jackpots[i])); }
 function waDG(i){ openWA(dgMsg(dangers[i])); }
 $('jpSendAll').onclick=()=>{ if(jackpots.length) openWA('🎰 KRT JACKPOT LIST\n\n'+jackpots.slice(0,6).map(j=>`${j.symbol} ₹${fmt(j.ltp)} ▲${j.chg}% | ${j.setup}\nE ${j.e} · SL ${j.sl} · T ${j.t1}/${j.t2}/${j.t3}`).join('\n\n')+'\n\n⚠ Educational only.'); };
 $('dgSendAll').onclick=()=>{ if(dangers.length) openWA('💀 KRT DANGER LIST\n\n'+dangers.slice(0,6).map(d=>`${d.symbol} ₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}% | ${d.setup}\nE ${d.e} · SL ${d.sl} · T ${d.t1}/${d.t2}`).join('\n\n')+'\n\n⚠ Educational only.'); };
+/* ---------- pre-open gap ---------- */
+let gapUpSet=new Set(), gapDownSet=new Set(), preopenData={up:[],down:[]};
+function renderPreopen(po){
+  preopenData = po || {up:[],down:[]};
+  const up=preopenData.up||[], dn=preopenData.down||[];
+  gapUpSet=new Set(up.map(x=>x.symbol)); gapDownSet=new Set(dn.map(x=>x.symbol));
+  $('poTag').textContent = (up.length+dn.length)
+      ? `${up.length}▲ / ${dn.length}▼ ${preopenData.final?'· FINAL':'· LIVE'}`
+      : 'WAITING 9:00 AM';
+  const row=(x,i,cls)=>`<div class="po-row"><span class="rk">${String(i+1).padStart(2,'0')}</span>
+      <b>${x.symbol}</b><span class="sec">${x.sector||''}</span>
+      <span class="px">₹${fmt(x.price)}</span>
+      <span class="gp ${cls}">${x.gap>=0?'▲':'▼'}${Math.abs(x.gap)}% (${x.gappts>=0?'+':''}${fmt(x.gappts)})</span></div>`;
+  $('gapUp').innerHTML = up.length? up.map((x,i)=>row(x,i,'up')).join('')
+      : `<div class="empty">Gap up illa — 9:00 AM apram varum</div>`;
+  $('gapDown').innerHTML = dn.length? dn.map((x,i)=>row(x,i,'dn')).join('')
+      : `<div class="empty">Gap down illa — 9:00 AM apram varum</div>`;
+}
+$('poSend').onclick=()=>{
+  const up=preopenData.up||[], dn=preopenData.down||[];
+  if(!up.length && !dn.length) return;
+  openWA('🌅 KRT PRE-OPEN GAP LIST'+(preopenData.final?' (FINAL)':' (LIVE)')+'\n\n▲ GAP UP\n'+
+    up.slice(0,8).map(x=>`${x.symbol} ₹${fmt(x.price)} ▲${x.gap}%`).join('\n')+
+    '\n\n▼ GAP DOWN\n'+dn.slice(0,8).map(x=>`${x.symbol} ₹${fmt(x.price)} ▼${Math.abs(x.gap)}%`).join('\n')+
+    '\n\n⚠ Educational only. Not investment advice.');
+};
 
 /* ---------- break lists ---------- */
 function brkRows(list, el, tagEl, dir, label){
@@ -209,38 +237,38 @@ function renderAlerts(alerts, chartink){
 }
 
 /* ---------- news ---------- */
-const TAGCLS={'CRASH RISK':'dn','NEGATIVE':'dn','STRONG POSITIVE':'up','POSITIVE':'up','NEUTRAL':'nt'};
+const TAGCLS={'CRASH RISK':'dn','COMPANY RISK':'dn','NEGATIVE':'dn','ORDER WIN':'up','STRONG POSITIVE':'up','POSITIVE':'up','RESULTS':'nt','NEUTRAL':'nt'};
 function renderNews(items){
-  if(!items||!items.length){ $('newsList').innerHTML=`<div class="empty">News loading…</div>`; return; }
+  if(!items||!items.length){ $('newsList').innerHTML=`<div class="empty">Fresh news illa — last 6 hours-la market news varala</div>`; return; }
   $('newsList').innerHTML=items.map(n=>`
     <div class="news-item"><div class="head">
       <span class="chip ${TAGCLS[n.tag]||'nt'}">${n.tag}</span>
       <span>${n.title}</span>
-      <span class="impact">${n.impact}/10</span></div>
-      <div class="ai-sum">${n.source}${n.stocks&&n.stocks.length?' · '+n.stocks.join(', '):''}</div></div>`).join('');
+      <span class="impact">${n.impact}/10 · ${n.ago||''}</span></div>
+      <div class="ai-sum">🕒 ${n.ago||''} · ${n.source}${n.stocks&&n.stocks.length?' · '+n.stocks.join(', '):''}</div></div>`).join('');
 }
 function renderNewsSignals(sig){
   const jp=(sig&&sig.jackpot)||[], dg=(sig&&sig.danger)||[], cr=(sig&&sig.market_crash)||[];
   $('newsJackpot').innerHTML = jp.length? jp.map(n=>`
     <div class="sig-card bull slim">
       <div class="sig-top"><b class="sym">${n.symbol}</b><span class="chip up">${n.tag}</span>
-        <span class="impact">${n.impact}/10</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
+        <span class="impact">${n.impact}/10 · ${n.ago||''}</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
       <div class="nh">${n.headline}</div>
       <div class="sig-foot"><span class="up">${n.verdict}</span>
         <button class="btn wa mini" onclick="openWA(${JSON.stringify('📰 NEWS JACKPOT\n\n'+n.symbol+'\n'+n.headline+'\n\n'+n.verdict+'\n\n⚠ Educational only.').replace(/"/g,'&quot;')})">🟢 WA</button></div>
-    </div>`).join('') : `<div class="empty">Positive news calls waiting…</div>`;
+    </div>`).join('') : `<div class="empty">Fresh positive news illa (last 6 hrs)…</div>`;
   $('newsDanger').innerHTML = (cr.map(c=>`
     <div class="sig-card bear slim">
-      <div class="sig-top"><b class="sym dn">⚠ MARKET CRASH RISK</b><span class="impact">${c.impact}/10</span></div>
+      <div class="sig-top"><b class="sym dn">⚠ MARKET CRASH RISK</b><span class="impact">${c.impact}/10 · ${c.ago||''}</span></div>
       <div class="nh">${c.headline}</div>
       <div class="sig-foot"><span class="dn">${c.action}</span></div>
     </div>`).join('') + dg.map(n=>`
     <div class="sig-card bear slim">
       <div class="sig-top"><b class="sym">${n.symbol}</b><span class="chip dn">${n.tag}</span>
-        <span class="impact">${n.impact}/10</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
+        <span class="impact">${n.impact}/10 · ${n.ago||''}</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
       <div class="nh">${n.headline}</div>
       <div class="sig-foot"><span class="dn">${n.verdict}</span></div>
-    </div>`).join('')) || `<div class="empty">Negative news illa 👍</div>`;
+    </div>`).join('')) || `<div class="empty">Fresh negative news illa 👍 (last 6 hrs)</div>`;
 
   // crash banner
   if(cr.length){
@@ -264,7 +292,8 @@ async function refresh(){
     // indices
     if(d.indices) $('idxStrip').innerHTML=d.indices.map(ix=>{
       const up=ix.chg>=0;
-      return `<span class="ix"><span class="nm">${ix.symbol}</span><b class="${up?'up':'dn'}">${fmt(ix.ltp)}</b> <span class="${up?'up':'dn'}">${up?'▲':'▼'}${Math.abs(ix.chg)}%</span></span>`;
+      const pts = ix.chgpts!=null ? `${up?'+':'−'}${fmt(Math.abs(ix.chgpts))}` : '';
+      return `<span class="ix"><span class="nm">${ix.symbol}</span><b class="${up?'up':'dn'}">${fmt(ix.ltp)}</b> <span class="${up?'up':'dn'}">${pts} (${up?'▲':'▼'}${Math.abs(ix.chg)}%)</span></span>`;
     }).join('')+(d.updated?` <span class="upd">upd ${d.updated}</span>`:'');
 
     const stocks=[...(d.gainers||[]),...(d.losers||[]),...(d.volume||[])];
@@ -273,6 +302,7 @@ async function refresh(){
     const sectors=d.sectors||[];
     const rank={}; sectors.forEach((s,i)=>rank[s.sector]=i+1);
 
+    renderPreopen(d.preopen);
     stockRows(d.gainers||[],'gainT');
     stockRows(d.losers||[],'loseT');
     brkRows(brk.pdh,'pdhList','pdhTag','up','PDH');
