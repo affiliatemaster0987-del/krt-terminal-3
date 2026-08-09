@@ -105,6 +105,7 @@ _tokens = {}          # symbol -> token
 _tokens_ready = False
 _cache = {"data": None, "ts": 0, "mode": "demo"}
 _levels = {"pdh": {}, "pdl": {}, "pwh": {}, "orh": {}, "day": "", "or_day": ""}
+_preopen = {"day": "", "rows": [], "final": False}
 _lock = threading.Lock()
 CACHE_SECONDS = 3
 
@@ -199,6 +200,7 @@ def _fetch_live():
         chg = ((ltp - close) / close * 100) if close else 0.0
         out.append({
             "symbol": name, "ltp": round(ltp, 2), "chg": round(chg, 2),
+            "chgpts": round(ltp - close, 2),
             "high": row.get("high"), "low": row.get("low"),
             "volume": row.get("tradeVolume"), "open": row.get("open"),
             "close": close, "sector": UNIVERSE.get(name, "INDEX"),
@@ -222,6 +224,7 @@ def _fetch_demo():
         chg = round(math.sin(t / 90 + i * 2.3) * 4 + random.uniform(-.4, .4), 2)
         out.append({
             "symbol": name, "ltp": round(ltp, 2), "chg": chg,
+            "chgpts": round(base * chg / 100, 2),
             "high": round(ltp * 1.008, 2), "low": round(ltp * 0.991, 2),
             "volume": int(abs(math.sin(t / 40 + i)) * 6_000_000 + 300_000),
             "open": round(base * 0.998, 2), "close": round(base, 2),
@@ -333,6 +336,40 @@ threading.Thread(target=_bg_worker, daemon=True).start()
 
 
 # ───────────────────────── dashboard ─────────────────────────
+def _update_preopen(stocks):
+    """
+    Pre-open gap list.
+      09:00–09:15 IST : IEP (indicative) vs prev close -> live gap
+      09:15 apram     : open price vs prev close -> final gap (freeze)
+    """
+    now = _ist_now()
+    today = now.strftime("%Y-%m-%d")
+    mins = now.hour * 60 + now.minute
+    if _preopen["day"] != today:
+        _preopen.update(day=today, rows=[], final=False)
+
+    def snap(price_key, final):
+        out = []
+        for r in stocks:
+            close = r.get("close") or 0
+            px = r.get(price_key) or 0
+            if not close or not px:
+                continue
+            gap = (px - close) / close * 100
+            if abs(gap) < 0.25:
+                continue
+            out.append({"symbol": r["symbol"], "sector": r.get("sector"),
+                        "close": round(close, 2), "price": round(px, 2),
+                        "gap": round(gap, 2), "gappts": round(px - close, 2)})
+        out.sort(key=lambda x: x["gap"], reverse=True)
+        _preopen.update(rows=out, final=final)
+
+    if 540 <= mins < 555:            # 09:00–09:15 live pre-open
+        snap("ltp", False)
+    elif mins >= 555 and not _preopen["final"]:   # 09:15 apram — freeze with open price
+        snap("open", True)
+
+
 def build_dashboard():
     rows, mode = get_quotes()
     indices = [r for r in rows if r["symbol"] in INDICES]
@@ -345,6 +382,8 @@ def build_dashboard():
         r["pdl"] = _levels["pdl"].get(s)
         r["pwh"] = _levels["pwh"].get(s)
         r["orh"] = _levels["orh"].get(s)
+
+    _update_preopen(stocks)
 
     gainers = sorted(stocks, key=lambda r: r["chg"], reverse=True)[:25]
     losers = sorted(stocks, key=lambda r: r["chg"])[:25]
@@ -401,7 +440,11 @@ def build_dashboard():
         "volume": by_vol, "alerts": alerts, "sectors": sectors,
         "breaks": {"pdh": pdh_break[:12], "pwh": pwh_break[:12],
                    "or5": or_break[:12], "pdl": pdl_break[:12]},
+        "preopen": {"up": [x for x in _preopen["rows"] if x["gap"] > 0][:12],
+                    "down": [x for x in _preopen["rows"] if x["gap"] < 0][:12],
+                    "final": _preopen["final"], "count": len(_preopen["rows"])},
         "levels_ready": bool(_levels["pdh"]),
         "universe": len(stocks),
         "updated": time.strftime("%H:%M:%S", time.gmtime(time.time() + 19800)),
     }
+
