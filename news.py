@@ -1,63 +1,130 @@
 """
-KRT — News AI 3.0
-RSS feeds poll pannum (Moneycontrol / ET / Reuters India), ovvoru headline-ayum
-tag pannum: STRONG POSITIVE / POSITIVE / NEUTRAL / NEGATIVE / CRASH RISK
-War, geopolitical, crash keywords -> immediate CRASH ALERT.
+KRT — News AI 4.0
+✅ FRESH news mattum (last 6 hours) — pazhaya news block
+✅ Indian market affect panra news mattum
+✅ Categories: RESULTS / ORDER WIN / COMPANY RISK / CRASH RISK / POSITIVE / NEGATIVE
+✅ US-only opinion articles (Buffett, Wall Street, crypto) filter out
 No API key needed.
 """
 import time, threading, re
 import urllib.request
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
+
+MAX_AGE_HOURS = 6
+POLL_SECONDS = 45
 
 FEEDS = [
-    ("Moneycontrol", "https://www.moneycontrol.com/rss/marketreports.xml"),
-    ("Moneycontrol Biz", "https://www.moneycontrol.com/rss/business.xml"),
-    ("ET Markets", "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms"),
-    ("ET World", "https://economictimes.indiatimes.com/news/international/rssfeeds/1898055174.cms"),
+    ("Moneycontrol Mkt",  "https://www.moneycontrol.com/rss/marketreports.xml"),
+    ("Moneycontrol Buzz", "https://www.moneycontrol.com/rss/buzzingstocks.xml"),
+    ("Moneycontrol Res",  "https://www.moneycontrol.com/rss/results.xml"),
+    ("Moneycontrol Biz",  "https://www.moneycontrol.com/rss/business.xml"),
+    ("ET Markets",        "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms"),
+    ("ET Stocks",         "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms"),
+    ("BS Markets",        "https://www.business-standard.com/rss/markets-106.rss"),
+    ("BS Companies",      "https://www.business-standard.com/rss/companies-101.rss"),
 ]
 
-# ───────────── keyword banks ─────────────
-STRONG_POS = ["record high", "all-time high", "order win", "bags order", "wins contract",
-              "wins order", "profit surges", "profit jumps", "beats estimates",
-              "rate cut", "buyback", "stake buy", "upgrade to buy", "multibagger",
-              "bonus issue", "merger approved", "approval granted", "new high"]
-POS_WORDS = ["surge", "rally", "beats", "beat", "profit rises", "jumps", "gains",
-             "upgrade", "dividend", "strong", "growth", "soars", "expansion",
-             "hikes target", "outperform", "revival", "recovery", "inflows"]
-NEG_WORDS = ["falls", "drops", "misses", "miss", "downgrade", "loss", "weak",
-             "slump", "probe", "penalty", "default", "tanks", "cuts guidance",
-             "resigns", "strike", "ban", "fraud", "raid", "outflows", "sell-off"]
-# ⚠ crash / geopolitical — highest priority
-CRASH_WORDS = ["war", "attack", "missile", "strike on", "invasion", "airstrike",
-               "nuclear", "terror", "iran", "israel", "russia ukraine", "conflict",
-               "crash", "plunge", "bloodbath", "circuit breaker", "meltdown",
-               "recession", "emergency", "collapse", "tariff war", "trade war",
-               "oil spike", "crude spikes", "bans exports", "sanctions",
-               "market crash", "panic selling", "black monday"]
+RESULT_WORDS = ["q1 results", "q2 results", "q3 results", "q4 results", "quarterly results",
+                "net profit", "revenue rises", "revenue falls", "ebitda", "earnings",
+                "profit jumps", "profit falls", "profit rises", "beats estimates",
+                "misses estimates", "guidance", "dividend declared", "results today"]
+ORDER_WORDS = ["order win", "wins order", "bags order", "wins contract", "bags contract",
+               "new order", "letter of intent", "awarded", "secures order",
+               "defence contract", "government order", "export order", "signs pact",
+               "signs mou", "acquires", "acquisition", "stake buy", "expansion plan"]
+COMPANY_RISK = ["fraud", "probe", "penalty", "raid", "resigns", "steps down",
+                "cfo quits", "ceo quits", "auditor resigns", "default", "insolvency",
+                "nclt", "downgrade", "cut to sell", "pledge", "promoter sells",
+                "stake sale", "plant shut", "fire at plant", "recall", "ban",
+                "licence cancelled", "gst notice", "show cause", "sebi order"]
+STRONG_POS = ["record high", "all-time high", "lifetime high", "upper circuit",
+              "profit surges", "beats estimates", "multibagger", "buyback",
+              "bonus issue", "stock split", "upgrade to buy", "target raised"]
+POS_WORDS = ["surge", "rally", "gains", "jumps", "soars", "upgrade", "outperform",
+             "strong growth", "expansion", "inflows", "recovery", "rate cut", "revival"]
+NEG_WORDS = ["falls", "drops", "slump", "tanks", "plunges", "lower circuit", "weak",
+             "outflows", "sell-off", "cuts guidance", "loss widens"]
+
+CRASH_EVENT = ["war", "airstrike", "missile attack", "invasion", "nuclear",
+               "terror attack", "military strike", "sanctions on", "border conflict",
+               "market crash", "bloodbath", "panic selling", "circuit breaker",
+               "black monday", "meltdown", "sensex crashes", "nifty crashes",
+               "sensex tanks", "nifty tanks", "rupee crashes", "crude spikes",
+               "recession fears", "global sell-off", "trade war", "tariff shock"]
+MARKET_CTX = ["sensex", "nifty", "market", "markets", "stocks", "dalal street",
+              "investors", "india", "indian", "rupee", "crude", "fii", "dii", "bse", "nse"]
+
+NOISE = ["wall street", "s&p 500", "nasdaq", "dow jones", "bitcoin", "ethereum",
+         "crypto", "buffett", "berkshire", "trumpflation", "how to", "explained:",
+         "should you", "here's why you", "top 5 tips", "webinar", "podcast",
+         "personal finance", "mutual fund sip", "gold rate today", "horoscope",
+         "penny stocks", "in 6 months", "in 5 years", "best sip"]
 
 STOCK_KEYWORDS = ["RELIANCE", "TCS", "HDFC", "INFOSYS", "INFY", "SBI", "ICICI", "ITC",
                   "TATA MOTORS", "TATA STEEL", "BEL", "HAL", "VARUN", "VBL", "ADANI",
-                  "NIFTY", "SENSEX", "BANK", "MARUTI", "AXIS", "KOTAK", "WIPRO",
-                  "BAJAJ", "LT", "SUN PHARMA", "CIPLA", "TITAN", "TRENT", "ZOMATO",
-                  "SWIGGY", "PAYTM", "NTPC", "ONGC", "COAL INDIA", "POWER GRID",
-                  "MOTHERSON", "AUROBINDO", "FORTIS", "HINDALCO", "GRASIM", "DIXON"]
+                  "NIFTY", "SENSEX", "MARUTI", "AXIS", "KOTAK", "WIPRO", "BAJAJ",
+                  "SUN PHARMA", "CIPLA", "TITAN", "TRENT", "ZOMATO", "SWIGGY", "PAYTM",
+                  "NTPC", "ONGC", "COAL INDIA", "POWER GRID", "MOTHERSON", "AUROBINDO",
+                  "FORTIS", "HINDALCO", "GRASIM", "DIXON", "LT", "L&T", "VEDANTA",
+                  "JSW", "DLF", "DMART", "NESTLE", "BRITANNIA", "APOLLO", "CROMPTON",
+                  "CHOLA", "BHEL", "IRFC", "RVNL", "IRCTC", "PFC", "REC", "GAIL",
+                  "BPCL", "IOC", "TECH MAHINDRA", "HCL", "LTIMINDTREE", "PERSISTENT"]
 
 _news_cache = {"items": [], "ts": 0}
 _lock = threading.Lock()
-POLL_SECONDS = 45
+
+
+def _age_hours(pubdate):
+    if not pubdate:
+        return None
+    try:
+        dt = parsedate_to_datetime(pubdate)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0
+    except Exception:
+        return None
+
+
+def _ago(h):
+    if h is None:
+        return ""
+    m = int(h * 60)
+    if m < 1:
+        return "just now"
+    if m < 60:
+        return f"{m}m ago"
+    return f"{int(h)}h ago"
+
+
+def _is_noise(t):
+    return any(w in t for w in NOISE)
+
+
+def _india_relevant(t):
+    return any(w in t for w in MARKET_CTX) or any(s.lower() in t for s in STOCK_KEYWORDS)
 
 
 def _classify(title):
-    """returns (tag, impact 1-10)"""
     t = title.lower()
-    crash = sum(1 for w in CRASH_WORDS if w in t)
-    spos = sum(1 for w in STRONG_POS if w in t)
+    ev = [w for w in CRASH_EVENT if w in t]
+    if ev and _india_relevant(t):
+        return "CRASH RISK", min(10, 8 + len(ev))
+    if any(w in t for w in COMPANY_RISK):
+        return "COMPANY RISK", min(10, 7 + sum(1 for w in COMPANY_RISK if w in t))
+    if any(w in t for w in ORDER_WORDS):
+        return "ORDER WIN", min(10, 7 + sum(1 for w in ORDER_WORDS if w in t))
+    if any(w in t for w in RESULT_WORDS):
+        pos = sum(1 for w in ["profit jumps", "profit rises", "beats estimates",
+                              "revenue rises", "dividend declared"] if w in t)
+        neg = sum(1 for w in ["profit falls", "misses estimates", "loss", "revenue falls"] if w in t)
+        return "RESULTS", min(10, 6 + max(pos, neg) * 2)
+    if any(w in t for w in STRONG_POS):
+        return "STRONG POSITIVE", min(10, 8 + sum(1 for w in STRONG_POS if w in t))
     pos = sum(1 for w in POS_WORDS if w in t)
     neg = sum(1 for w in NEG_WORDS if w in t)
-    if crash:
-        return "CRASH RISK", min(10, 8 + crash)
-    if spos:
-        return "STRONG POSITIVE", min(10, 8 + spos)
     if pos > neg:
         return "POSITIVE", min(9, 5 + pos * 2)
     if neg > pos:
@@ -78,23 +145,31 @@ def _fetch_feed(source, url):
     out = []
     for item in root.iter("item"):
         title = (item.findtext("title") or "").strip()
-        link = (item.findtext("link") or "").strip()
-        pub = (item.findtext("pubDate") or "").strip()
         if not title:
             continue
+        low = title.lower()
+        age = _age_hours((item.findtext("pubDate") or "").strip())
+        if age is None or age > MAX_AGE_HOURS:
+            continue
+        if _is_noise(low):
+            continue
+        if not _india_relevant(low):
+            continue
         tag, impact = _classify(title)
-        out.append({"source": source, "title": title, "link": link,
-                    "time": pub[:22], "tag": tag, "impact": impact,
-                    "stocks": _affected(title)})
-    return out[:12]
+        if tag == "NEUTRAL" and impact < 4:
+            continue
+        out.append({"source": source, "title": title,
+                    "link": (item.findtext("link") or "").strip(),
+                    "age_h": round(age, 2), "ago": _ago(age),
+                    "tag": tag, "impact": impact, "stocks": _affected(title)})
+    return out[:15]
 
 
-_ORDER = {"CRASH RISK": 0, "STRONG POSITIVE": 1, "NEGATIVE": 2,
-          "POSITIVE": 3, "NEUTRAL": 4}
+_ORDER = {"CRASH RISK": 0, "COMPANY RISK": 1, "ORDER WIN": 2, "RESULTS": 3,
+          "STRONG POSITIVE": 4, "NEGATIVE": 5, "POSITIVE": 6, "NEUTRAL": 7}
 
 
 def get_news():
-    """Cached, merged, de-duplicated news (max 20). Crash/strong news mudhal-la."""
     with _lock:
         now = time.time()
         if _news_cache["items"] and now - _news_cache["ts"] < POLL_SECONDS:
@@ -110,27 +185,25 @@ def get_news():
                     items.append(it)
             except Exception as e:
                 print("news feed error:", source, e)
-        items.sort(key=lambda x: (_ORDER.get(x["tag"], 5), -x["impact"]))
-        if items:
-            _news_cache.update(items=items[:20], ts=now)
+        items.sort(key=lambda x: (_ORDER.get(x["tag"], 8), x["age_h"], -x["impact"]))
+        _news_cache.update(items=items[:25], ts=now)
         return _news_cache["items"]
 
 
-# ───────────── News-based JACKPOT + CRASH signals ─────────────
 _ALIAS = {"INFOSYS": "INFY", "HDFC": "HDFCBANK", "ICICI": "ICICIBANK", "SBI": "SBIN",
           "TATA MOTORS": "TATAMOTORS", "TATA STEEL": "TATASTEEL", "VARUN": "VBL",
           "AXIS": "AXISBANK", "KOTAK": "KOTAKBANK", "SUN PHARMA": "SUNPHARMA",
-          "COAL INDIA": "COALINDIA", "POWER GRID": "POWERGRID", "AUROBINDO": "AUROPHARMA"}
+          "COAL INDIA": "COALINDIA", "POWER GRID": "POWERGRID", "AUROBINDO": "AUROPHARMA",
+          "L&T": "LT", "VEDANTA": "VEDL", "TECH MAHINDRA": "TECHM", "HCL": "HCLTECH",
+          "LTIMINDTREE": "LTIM", "NESTLE": "NESTLEIND", "APOLLO": "APOLLOHOSP",
+          "CHOLA": "CHOLAFIN", "REC": "RECLTD"}
+
+GOOD_TAGS = ("ORDER WIN", "STRONG POSITIVE", "POSITIVE")
+BAD_TAGS = ("COMPANY RISK", "NEGATIVE")
 
 
 def get_news_signals():
-    """
-    returns {"jackpot": [...], "danger": [...], "market_crash": [...]}
-      jackpot      = positive/strong-positive news + stock match
-      danger       = negative news + stock match
-      market_crash = war / geopolitical / crash headlines (whole market risk)
-    """
-    jackpot, danger, crash = [], [], []
+    jackpot, danger, crash, results = [], [], [], []
     smap = {}
     try:
         from smart_client import build_dashboard
@@ -142,38 +215,49 @@ def get_news_signals():
 
     for n in get_news():
         tag = n["tag"]
+        base = {"headline": n["title"][:130], "impact": n["impact"], "tag": tag,
+                "ago": n["ago"], "source": n["source"], "link": n.get("link", "")}
         if tag == "CRASH RISK":
-            crash.append({"headline": n["title"][:120], "impact": n["impact"],
-                          "source": n["source"], "link": n.get("link", ""),
+            crash.append({**base,
                           "action": "⚠ MARKET CRASH RISK — புது long வேண்டாம், SL tight"})
             continue
-        for st in n.get("stocks", []):
-            sym = _ALIAS.get(st, st)
-            me = smap.get(sym)
-            row = {"symbol": sym, "headline": n["title"][:110], "impact": n["impact"],
-                   "tag": tag, "chg": (me or {}).get("chg"), "ltp": (me or {}).get("ltp"),
-                   "link": n.get("link", "")}
-            if tag in ("STRONG POSITIVE", "POSITIVE") and n["impact"] >= 7:
-                row["verdict"] = ("🔥 JACKPOT — news + price confirm"
-                                  if me and (me.get("chg") or 0) > 0.5
-                                  else "WAIT — technical confirm ஆகணும்")
-                jackpot.append(row)
-            elif tag == "NEGATIVE" and n["impact"] >= 7:
-                row["verdict"] = ("💀 DANGER — news + price falling"
-                                  if me and (me.get("chg") or 0) < -0.5
-                                  else "WATCH — negative news")
-                danger.append(row)
-            break
+        syms = [_ALIAS.get(s, s) for s in n.get("stocks", [])]
+        real = [s for s in syms if s not in ("NIFTY", "SENSEX")]
+        sym = (real or syms or [None])[0]
+        me = smap.get(sym) if sym else None
+        row = {**base, "symbol": sym or "MARKET",
+               "chg": (me or {}).get("chg"), "ltp": (me or {}).get("ltp")}
+
+        if tag == "RESULTS":
+            row["verdict"] = ("📊 RESULT — price up, momentum"
+                              if me and (me.get("chg") or 0) > 0.5
+                              else "📊 RESULT — price reaction paarunga")
+            results.append(row)
+            if me and (me.get("chg") or 0) > 1:
+                jackpot.append({**row, "verdict": "🔥 RESULT JACKPOT — beat + price up"})
+            elif me and (me.get("chg") or 0) < -1:
+                danger.append({**row, "verdict": "💀 RESULT DANGER — miss + price down"})
+        elif tag in GOOD_TAGS and n["impact"] >= 7:
+            row["verdict"] = ("🔥 JACKPOT — news + price confirm"
+                              if me and (me.get("chg") or 0) > 0.5
+                              else "WAIT — technical confirm ஆகணும்")
+            jackpot.append(row)
+        elif tag in BAD_TAGS and n["impact"] >= 7:
+            row["verdict"] = ("💀 DANGER — news + price falling"
+                              if me and (me.get("chg") or 0) < -0.5
+                              else "⚠ WATCH — company risk news")
+            danger.append(row)
 
     def uniq(lst):
         seen, out = set(), []
         for x in lst:
-            k = x.get("symbol") or x.get("headline")
+            k = str(x.get("symbol", "")) + x.get("headline", "")[:30]
             if k in seen:
                 continue
             seen.add(k); out.append(x)
         return out
 
-    return {"jackpot": uniq(jackpot)[:8], "danger": uniq(danger)[:8],
-            "market_crash": crash[:5]}
+    return {"jackpot": uniq(jackpot)[:10], "danger": uniq(danger)[:10],
+            "market_crash": crash[:5], "results": uniq(results)[:8],
+            "fresh_window_hours": MAX_AGE_HOURS}
 
