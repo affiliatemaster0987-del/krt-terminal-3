@@ -1,4 +1,4 @@
-/* ═══════════ KRT AI 3.0 — LIVE (Angel One) ═══════════ */
+/* ═══════════ KRT AI 4.0 — LIVE (Angel One + Chartink) ═══════════ */
 const CONFIG = { DASHBOARD:"/api/dashboard", NEWS:"/api/news", REFRESH_MS:15000, MARKET_CLOSE:"15:30" };
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n||0).toLocaleString('en-IN');
@@ -50,7 +50,7 @@ renderScore(50);
 /* ---------- WhatsApp ---------- */
 $('waNum').value=store.get('waNum','');
 $('alSave').onclick=()=>{ store.set('waNum',$('waNum').value.trim());
-  $('alStatus').textContent='✅ Saved — alerts WhatsApp-la open agum.'; $('alStatus').className='status ok'; };
+  $('alStatus').textContent='✅ Saved — alerts will open in WhatsApp.'; $('alStatus').className='status ok'; };
 function openWA(text){
   const num=store.get('waNum','').replace(/\D/g,'');
   window.open((num?`https://wa.me/${num}?text=`:`https://wa.me/?text=`)+encodeURIComponent(text),'_blank');
@@ -88,6 +88,7 @@ function buildJackpots(stocks, brk, sectorRank){
         e:rnd(r.ltp), sl:rnd(Math.max(r.low||r.ltp*0.99, r.ltp*0.99)),
         t1:rnd(r.ltp*1.01), t2:rnd(r.ltp*1.02), t3:rnd(r.ltp*1.035)};
     })
+    .filter(x=>x.score>=70 && x.tags.length>=1)
     .sort((a,b)=>b.score-a.score).slice(0,12);
   renderJackpots();
 }
@@ -113,7 +114,7 @@ function buildDangers(stocks, brk, sectorRank, total){
 }
 function renderJackpots(){
   $('jpTag').textContent=jackpots.length+' CALLS';
-  if(!jackpots.length){ $('jackpotList').innerHTML=`<div class="empty">Jackpot setups waiting… (momentum + breakout confirm aana varum)</div>`; return; }
+  if(!jackpots.length){ $('jackpotList').innerHTML=`<div class="empty">No strong jackpot setup yet — waiting for momentum + breakout confirmation</div>`; return; }
   $('jackpotList').innerHTML=jackpots.map((j,i)=>`
     <div class="sig-card bull">
       <div class="sig-top"><b class="sym">${j.symbol}</b>
@@ -129,7 +130,7 @@ function renderJackpots(){
 }
 function renderDangers(){
   $('dgTag').textContent=dangers.length+' CALLS';
-  if(!dangers.length){ $('dangerList').innerHTML=`<div class="empty">Danger setups illa — market stable 👍</div>`; return; }
+  if(!dangers.length){ $('dangerList').innerHTML=`<div class="empty">No danger setups — market stable 👍</div>`; return; }
   $('dangerList').innerHTML=dangers.map((d,i)=>`
     <div class="sig-card bear">
       <div class="sig-top"><b class="sym">${d.symbol}</b>
@@ -146,7 +147,81 @@ function renderDangers(){
 function waJP(i){ openWA(jpMsg(jackpots[i])); }
 function waDG(i){ openWA(dgMsg(dangers[i])); }
 $('jpSendAll').onclick=()=>{ if(jackpots.length) openWA('🎰 KRT JACKPOT LIST\n\n'+jackpots.slice(0,6).map(j=>`${j.symbol} ₹${fmt(j.ltp)} ▲${j.chg}% | ${j.setup}\nE ${j.e} · SL ${j.sl} · T ${j.t1}/${j.t2}/${j.t3}`).join('\n\n')+'\n\n⚠ Educational only.'); };
-$('dgSendAll').onclick=()=>{ if(dangers.length) openWA('💀 KRT DANGER LIST\n\n'+dangers.slice(0,6).map(d=>`${d.symbol} ₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}% | ${d.setup}\nE ${d.e} · SL ${d.sl} · T ${d.t1}/${d.t2}`).join('\n\n')+'\n\n⚠ Educational only.'); };
+$('dgSendAll').onclick=()=>{ if(dangers.length) openWA('💀 KRT DANGER LIST\n\n'+dangers.slice(0,6).map(d=>`${d.symbol} ₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}% | ${d.setup}\nE ${d.e} · SL ${d.sl} · T ${d.t1}/${d.t2}`).join('\n\n')+'\n\n⚠ Educational only.'); };/* ---------- market mood ---------- */
+function renderMood(m){
+  if(!m||!$('moodPill'))return;
+  $('moodPill').className='mood-pill mood-'+m.mood;
+  $('moodPill').innerHTML=`<span class="em">${m.emoji}</span> MARKET MOOD: ${m.mood}
+     <span class="nt2">· breadth ${m.breadth}% · ${m.note}</span>`;
+}
+
+/* ---------- global cues ---------- */
+function renderGlobal(rows){
+  if(!$('globalCues'))return;
+  if(!rows||!rows.length){ $('globalCues').innerHTML=`<div class="empty">Global cues loading…</div>`; return; }
+  $('globalCues').innerHTML=rows.map(g=>`<div class="glb-cell"><div class="k">${g.name}</div>
+    <div class="v ${g.chg>=0?'up':'dn'}">${g.chg>=0?'▲':'▼'}${Math.abs(g.chg)}%</div></div>`).join('');
+  const avg=rows.reduce((a,b)=>a+b.chg,0)/rows.length;
+  $('glTag').textContent = avg>0.2?'GAP-UP BIAS':avg<-0.2?'GAP-DOWN BIAS':'FLAT';
+}
+
+/* ---------- options watchlist ---------- */
+function renderOptions(stocks, sectorRank, total){
+  const ce=[...stocks].filter(r=>r.chg>=1).sort((a,b)=>b.chg-a.chg).slice(0,6);
+  const pe=[...stocks].filter(r=>r.chg<=-1).sort((a,b)=>a.chg-b.chg).slice(0,6);
+  const line=(r,cls)=>{
+    const rk=sectorRank[r.sector]||99, why=[cls==='up'?'trend up':'trend down'];
+    if(cls==='up'&&rk<=3)why.push('strong sector');
+    if(cls==='dn'&&rk>=total-3)why.push('weak sector');
+    if((r.volume||0)>1e7)why.push('high volume');
+    return `<div class="opt-row"><b>${r.symbol}</b><span class="sec">${r.sector||''}</span>
+      <span class="${cls}">${r.chg>=0?'▲':'▼'}${Math.abs(r.chg)}%</span>
+      <span class="why">${why.join(' · ')}</span></div>`;
+  };
+  $('ceList').innerHTML = ce.length? ce.map(r=>line(r,'up')).join('') : `<div class="empty">No clear CE bias</div>`;
+  $('peList').innerHTML = pe.length? pe.map(r=>line(r,'dn')).join('') : `<div class="empty">No clear PE bias</div>`;
+}
+
+/* ---------- CHARTINK scanner buckets ---------- */
+function ckName(c){ return c.scan_name||c.alert_name||c.scanName||c.name||'Chartink scan'; }
+function ckStocks(c){
+  let st=c.stocks||c.symbols||c.stock||'';
+  if(Array.isArray(st)) st=st.join(', ');
+  if(!st&&c.data) st=(typeof c.data==='string'?c.data:JSON.stringify(c.data)).slice(0,150);
+  return st;
+}
+function ckTime(c){ return c.triggered_at||c.at||c.time||''; }
+const CK_BUCKETS=[
+  {el:'pdhList',tag:'pdhTag',dir:'up',keys:['pdh','prev day high','previous day high','day high break']},
+  {el:'pdlList',tag:'pdlTag',dir:'dn',keys:['pdl','prev day low','previous day low','day low break']},
+  {el:'pwhList',tag:'pwhTag',dir:'up',keys:['pwh','prev week high','previous week high','week high']},
+  {el:'pwlList',tag:'pwlTag',dir:'dn',keys:['pwl','prev week low','previous week low','week low']},
+  {el:'orList', tag:'orTag', dir:'up',keys:['5 min','5min','five min','opening range','first candle','orb']},
+];
+function renderChartink(list){
+  const all=(list||[]).slice().reverse();
+  const used=new Set();
+  CK_BUCKETS.forEach(b=>{
+    const hits=all.filter(c=>{ const n=ckName(c).toLowerCase();
+      const m=b.keys.some(k=>n.includes(k)); if(m)used.add(c); return m; });
+    $(b.tag).textContent=hits.length+' HITS';
+    $(b.el).innerHTML = hits.length? hits.slice(0,12).map(c=>`
+      <div class="brk-row"><div><b>${ckStocks(c)||'—'}</b></div>
+        <div class="brk-mid">${ckName(c)} ${ckTime(c)?'· '+ckTime(c):''}</div>
+        <span class="chip ${b.dir}">${b.dir==='up'?'🟢 BUY':'🔴 SELL'}</span></div>`).join('')
+      : `<div class="empty">No Chartink hits yet — create an alert with this keyword in the scanner name</div>`;
+  });
+  const others=all.filter(c=>!used.has(c));
+  if($('ckOther')){
+    $('ckOtherTag').textContent=others.length+' HITS';
+    $('ckOther').innerHTML = others.length? others.slice(0,15).map(c=>`
+      <div class="brk-row"><div><b>${ckStocks(c)||'—'}</b></div>
+        <div class="brk-mid">${ckName(c)} ${ckTime(c)?'· '+ckTime(c):''}</div>
+        <span class="chip nt">SCAN</span></div>`).join('')
+      : `<div class="empty">Other Chartink scans appear here</div>`;
+  }
+}
+
 /* ---------- pre-open gap ---------- */
 let gapUpSet=new Set(), gapDownSet=new Set(), preopenData={up:[],down:[]};
 function renderPreopen(po){
@@ -161,9 +236,9 @@ function renderPreopen(po){
       <span class="px">₹${fmt(x.price)}</span>
       <span class="gp ${cls}">${x.gap>=0?'▲':'▼'}${Math.abs(x.gap)}% (${x.gappts>=0?'+':''}${fmt(x.gappts)})</span></div>`;
   $('gapUp').innerHTML = up.length? up.map((x,i)=>row(x,i,'up')).join('')
-      : `<div class="empty">Gap up illa — 9:00 AM apram varum</div>`;
+      : `<div class="empty">No gap-up yet — fills after 9:00 AM</div>`;
   $('gapDown').innerHTML = dn.length? dn.map((x,i)=>row(x,i,'dn')).join('')
-      : `<div class="empty">Gap down illa — 9:00 AM apram varum</div>`;
+      : `<div class="empty">No gap-down yet — fills after 9:00 AM</div>`;
 }
 $('poSend').onclick=()=>{
   const up=preopenData.up||[], dn=preopenData.down||[];
@@ -173,21 +248,6 @@ $('poSend').onclick=()=>{
     '\n\n▼ GAP DOWN\n'+dn.slice(0,8).map(x=>`${x.symbol} ₹${fmt(x.price)} ▼${Math.abs(x.gap)}%`).join('\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 };
-
-/* ---------- break lists ---------- */
-function brkRows(list, el, tagEl, dir, label){
-  $(tagEl).textContent=(list||[]).length+' HITS';
-  if(!list || !list.length){ $(el).innerHTML=`<div class="empty">Waiting… (levels 9:20 apram ready agum)</div>`; return; }
-  $(el).innerHTML=list.map(r=>{
-    const lv = dir==='up' ? (r.pwh||r.pdh||r.orh) : r.pdl;
-    return `<div class="brk-row">
-      <div><b>${r.symbol}</b> <span class="sec">${r.sector}</span></div>
-      <div class="brk-mid">${label} ${fmt(lv)} ✅ · ₹${fmt(r.ltp)}
-        <span class="${dir==='up'?'up':'dn'}">${dir==='up'?'▲':'▼'}${Math.abs(r.chg)}%</span> · Vol ${volFmt(r.volume)}</div>
-      <span class="chip ${dir==='up'?'up':'dn'}">${dir==='up'?'🟢 BUY':'🔴 SELL'}</span>
-    </div>`;
-  }).join('');
-}
 
 /* ---------- sectors ---------- */
 function renderSectors(sectors){
@@ -232,14 +292,15 @@ function renderAlerts(alerts, chartink){
   });
   (chartink||[]).forEach(c=>{
     const k='c:'+JSON.stringify(c).slice(0,60); if(seen.has(k))return; seen.add(k);
-    pushAlert({symbol:'CHARTINK', reason:`${c.scan_name||c.alert_name||'Scanner'} → ${c.stocks||''}`, type:'CRASH'});
+    const nm = ckName(c), st = ckStocks(c);
+    pushAlert({symbol:'CHARTINK', reason:`<b>${nm}</b>${st?' → '+st:' (no stocks in payload)'}`, type:'CRASH'});
   });
 }
 
 /* ---------- news ---------- */
 const TAGCLS={'CRASH RISK':'dn','COMPANY RISK':'dn','NEGATIVE':'dn','ORDER WIN':'up','STRONG POSITIVE':'up','POSITIVE':'up','RESULTS':'nt','NEUTRAL':'nt'};
 function renderNews(items){
-  if(!items||!items.length){ $('newsList').innerHTML=`<div class="empty">Fresh news illa — last 6 hours-la market news varala</div>`; return; }
+  if(!items||!items.length){ $('newsList').innerHTML=`<div class="empty">No fresh market news in the last 6 hours</div>`; return; }
   $('newsList').innerHTML=items.map(n=>`
     <div class="news-item"><div class="head">
       <span class="chip ${TAGCLS[n.tag]||'nt'}">${n.tag}</span>
@@ -256,7 +317,7 @@ function renderNewsSignals(sig){
       <div class="nh">${n.headline}</div>
       <div class="sig-foot"><span class="up">${n.verdict}</span>
         <button class="btn wa mini" onclick="openWA(${JSON.stringify('📰 NEWS JACKPOT\n\n'+n.symbol+'\n'+n.headline+'\n\n'+n.verdict+'\n\n⚠ Educational only.').replace(/"/g,'&quot;')})">🟢 WA</button></div>
-    </div>`).join('') : `<div class="empty">Fresh positive news illa (last 6 hrs)…</div>`;
+    </div>`).join('') : `<div class="empty">No fresh positive news (last 6 hrs)</div>`;
   $('newsDanger').innerHTML = (cr.map(c=>`
     <div class="sig-card bear slim">
       <div class="sig-top"><b class="sym dn">⚠ MARKET CRASH RISK</b><span class="impact">${c.impact}/10 · ${c.ago||''}</span></div>
@@ -268,9 +329,8 @@ function renderNewsSignals(sig){
         <span class="impact">${n.impact}/10 · ${n.ago||''}</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
       <div class="nh">${n.headline}</div>
       <div class="sig-foot"><span class="dn">${n.verdict}</span></div>
-    </div>`).join('')) || `<div class="empty">Fresh negative news illa 👍 (last 6 hrs)</div>`;
+    </div>`).join('')) || `<div class="empty">No fresh negative news (last 6 hrs) 👍</div>`;
 
-  // crash banner
   if(cr.length){
     $('crashBanner').style.display='block';
     $('crashBanner').innerHTML=`🚨 <b>CRASH ALERT</b> — ${cr[0].headline} <span class="cb-act">${cr[0].action}</span>`;
@@ -289,7 +349,6 @@ async function pull(u){ try{ const r=await fetch(u); return r.ok? await r.json()
 async function refresh(){
   const d=await pull(CONFIG.DASHBOARD);
   if(d && !d.error){
-    // indices
     if(d.indices) $('idxStrip').innerHTML=d.indices.map(ix=>{
       const up=ix.chg>=0;
       const pts = ix.chgpts!=null ? `${up?'+':'−'}${fmt(Math.abs(ix.chgpts))}` : '';
@@ -302,12 +361,13 @@ async function refresh(){
     const sectors=d.sectors||[];
     const rank={}; sectors.forEach((s,i)=>rank[s.sector]=i+1);
 
+    renderMood(d.mood);
+    renderGlobal(d.global);
+    renderOptions(uniq, rank, sectors.length);
     renderPreopen(d.preopen);
     stockRows(d.gainers||[],'gainT');
     stockRows(d.losers||[],'loseT');
-    brkRows(brk.pdh,'pdhList','pdhTag','up','PDH');
-    brkRows(brk.pwh,'pwhList','pwhTag','up','PWH');
-    brkRows(brk.or5,'orList','orTag','up','5min High');
+    renderChartink(d.chartink);
     buildJackpots(uniq,brk,rank);
     buildDangers(uniq,brk,rank,sectors.length);
     renderSectors(sectors);
