@@ -58,6 +58,21 @@ def chartink_webhook():
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/levels")
+def api_levels():
+    """PDH/PWH/5-min levels status — debug ku."""
+    try:
+        from smart_client import _levels, _diag
+        return jsonify({"diag": _diag,
+                        "counts": {"pdh": len(_levels["pdh"]), "pwh": len(_levels["pwh"]),
+                                   "orh": len(_levels["orh"])},
+                        "sample_pdh": dict(list(_levels["pdh"].items())[:5]),
+                        "sample_pwh": dict(list(_levels["pwh"].items())[:5]),
+                        "sample_orh": dict(list(_levels["orh"].items())[:5])})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/health")
 def health():
     return {"status": "ok"}
