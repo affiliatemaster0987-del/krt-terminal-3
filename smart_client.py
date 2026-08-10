@@ -98,6 +98,7 @@ UNIVERSE = {
     "INDHOTEL": "HOTELS", "IGL": "GAS", "MGL": "GAS", "GUJGASLTD": "GAS",
 }
 
+YF = "https://query1.finance.yahoo.com/v8/finance/chart/"
 SCRIP_MASTER_URL = ("https://margincalculator.angelbroking.com/OpenAPI_File/"
                     "files/OpenAPIScripMaster.json")
 
@@ -106,6 +107,8 @@ _tokens_ready = False
 _cache = {"data": None, "ts": 0, "mode": "demo"}
 _levels = {"pdh": {}, "pdl": {}, "pwh": {}, "orh": {}, "day": "", "or_day": ""}
 _preopen = {"day": "", "rows": [], "final": False}
+_diag = {"source": "angel", "tokens": 0, "pdh_ok": 0, "orh_ok": 0, "last_error": "", "sample_error": "",
+         "login": "not tried", "running": False, "started": ""}
 _lock = threading.Lock()
 CACHE_SECONDS = 3
 
@@ -158,8 +161,10 @@ def _load_tokens():
                 found[name] = str(row.get("token"))
         _tokens = found
         _tokens_ready = True
+        _diag["tokens"] = len(found)
         print(f"[scrip master] resolved {len(found)}/{len(want)} tokens")
     except Exception as e:
+        _diag["last_error"] = "scrip master: " + str(e)[:200]
         print("scrip master error:", e)
     return _tokens
 
@@ -259,13 +264,138 @@ def _ist_now():
     return datetime.utcnow() + timedelta(hours=5, minutes=30)
 
 
-def _warm_levels():
-    """Prev day high/low + prev week high — daily candles-la irundhu (day-ku oru dhadava)."""
+def _yf(symbol, rng, interval):
+    """Yahoo Finance chart data — Angel historical fail aana fallback."""
+    url = f"{YF}{symbol}?range={rng}&interval={interval}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode())
+
+
+def _yf_levels(sym):
+    """(pdh, pdl, pwh) from Yahoo daily candles."""
+    d = _yf(sym + ".NS", "1mo", "1d")
+    res = d["chart"]["result"][0]
+    q = res["indicators"]["quote"][0]
+    ts = res["timestamp"]
+    highs, lows = q["high"], q["low"]
     today = _ist_now().strftime("%Y-%m-%d")
-    if _levels["day"] == today or not _has_creds():
+    rows = []
+    for i, t in enumerate(ts):
+        if highs[i] is None or lows[i] is None:
+            continue
+        day = datetime.utcfromtimestamp(t + 19800).strftime("%Y-%m-%d")
+        if day == today:
+            continue
+        rows.append((day, float(highs[i]), float(lows[i])))
+    if not rows:
+        return None
+    pdh, pdl = rows[-1][1], rows[-1][2]
+    past5 = rows[-5:]
+    pwh = max(x[1] for x in past5)
+    return round(pdh, 2), round(pdl, 2), round(pwh, 2)
+
+
+def _yf_opening_high(sym):
+    """First 5-min candle high (today 09:15–09:20) from Yahoo."""
+    d = _yf(sym + ".NS", "5d", "5m")
+    res = d["chart"]["result"][0]
+    q = res["indicators"]["quote"][0]
+    ts = res["timestamp"]
+    today = _ist_now().strftime("%Y-%m-%d")
+    for i, t in enumerate(ts):
+        ist = datetime.utcfromtimestamp(t + 19800)
+        if ist.strftime("%Y-%m-%d") == today and ist.hour == 9 and ist.minute == 15:
+            if q["high"][i] is not None:
+                return round(float(q["high"][i]), 2)
+    return None
+
+
+def _warm_levels_yahoo():
+    """Yahoo-la irundhu PDH/PDL/PWH — Angel fail aana idhu run agum."""
+    today = _ist_now().strftime("%Y-%m-%d")
+    ok = 0
+    for sym in list(_load_tokens().keys()):
+        if sym in _levels["pdh"]:
+            continue
+        try:
+            v = _yf_levels(sym)
+            if v:
+                _levels["pdh"][sym], _levels["pdl"][sym], _levels["pwh"][sym] = v
+                ok += 1
+        except Exception as ex:
+            if not _diag["sample_error"]:
+                _diag["sample_error"] = f"yahoo {sym}: {str(ex)[:150]}"
+        time.sleep(0.15)
+    _diag["pdh_ok"] = len(_levels["pdh"])
+    _diag["source"] = "yahoo" if ok else _diag.get("source", "")
+    if _levels["pdh"]:
+        _levels["day"] = today
+    print(f"[levels/yahoo] {ok} symbols")
+
+
+def _warm_or_yahoo():
+    today = _ist_now().strftime("%Y-%m-%d")
+    now = _ist_now()
+    if now.hour < 9 or (now.hour == 9 and now.minute < 21):
+        return
+    ok = 0
+    for sym in list(_load_tokens().keys()):
+        if sym in _levels["orh"]:
+            continue
+        try:
+            h = _yf_opening_high(sym)
+            if h:
+                _levels["orh"][sym] = h
+                ok += 1
+        except Exception:
+            pass
+        time.sleep(0.15)
+    _diag["orh_ok"] = len(_levels["orh"])
+    if _levels["orh"]:
+        _levels["or_day"] = today
+    print(f"[OR/yahoo] {ok} symbols")
+
+
+# ───────── Global cues (gap direction proxy) ─────────
+_global = {"rows": [], "ts": 0}
+GLOBAL_TICKERS = [("GIFT/SGX proxy", "^NSEI"), ("DOW Fut", "YM=F"),
+                  ("NASDAQ Fut", "NQ=F"), ("NIKKEI", "^N225"), ("CRUDE", "CL=F")]
+
+
+def get_global_cues():
+    if time.time() - _global["ts"] < 300 and _global["rows"]:
+        return _global["rows"]
+    out = []
+    for name, tk in GLOBAL_TICKERS:
+        try:
+            d = _yf(tk, "5d", "1d")
+            m = d["chart"]["result"][0]["meta"]
+            px = m.get("regularMarketPrice")
+            pc = m.get("chartPreviousClose") or m.get("previousClose")
+            if px and pc:
+                out.append({"name": name, "px": round(float(px), 2),
+                            "chg": round((px - pc) / pc * 100, 2)})
+        except Exception:
+            pass
+    if out:
+        _global.update(rows=out, ts=time.time())
+    return _global["rows"]
+
+
+def _warm_levels():
+    """Prev day high/low + prev week high — daily candles (day-ku oru dhadava)."""
+    today = _ist_now().strftime("%Y-%m-%d")
+    if _levels["day"] == today:
+        return
+    if not _has_creds():
+        _diag["last_error"] = "no SMARTAPI credentials in env"
         return
     try:
+        _diag["running"] = True
+        _diag["started"] = time.strftime("%H:%M:%S", time.gmtime(time.time() + 19800))
         sc = _login()
+        _diag["login"] = "ok"
         tmap = _load_tokens()
         frm = (_ist_now() - timedelta(days=20)).strftime("%Y-%m-%d 09:15")
         to = _ist_now().strftime("%Y-%m-%d 15:30")
@@ -283,12 +413,19 @@ def _warm_levels():
                 past = [x for x in c if x[0][:10] != today][-5:]
                 if past:
                     _levels["pwh"][sym] = round(max(float(x[2]) for x in past), 2)
-            except Exception:
-                pass
+            except Exception as ex:
+                if not _diag["sample_error"]:
+                    _diag["sample_error"] = f"{sym}: {str(ex)[:200]}"
             time.sleep(0.35)          # Angel historical rate limit
-        _levels["day"] = today
+        _diag["pdh_ok"] = len(_levels["pdh"])
+        _diag["running"] = False
+        if _levels["pdh"]:
+            _levels["day"] = today
         print(f"[levels] PDH/PWH ready for {len(_levels['pdh'])} symbols")
     except Exception as e:
+        _diag["running"] = False
+        _diag["login"] = "failed"
+        _diag["last_error"] = "warm_levels: " + str(e)[:200]
         print("warm levels error:", e)
 
 
@@ -312,12 +449,16 @@ def _warm_opening_range():
                 c = (r or {}).get("data") or []
                 if c:
                     _levels["orh"][sym] = round(float(c[0][2]), 2)
-            except Exception:
-                pass
+            except Exception as ex:
+                if not _diag["sample_error"]:
+                    _diag["sample_error"] = f"OR {sym}: {str(ex)[:200]}"
             time.sleep(0.35)
-        _levels["or_day"] = today
+        _diag["orh_ok"] = len(_levels["orh"])
+        if _levels["orh"]:
+            _levels["or_day"] = today
         print(f"[levels] 5-min opening range ready for {len(_levels['orh'])} symbols")
     except Exception as e:
+        _diag["last_error"] = "warm_OR: " + str(e)[:200]
         print("warm OR error:", e)
 
 
@@ -326,7 +467,11 @@ def _bg_worker():
         try:
             _load_tokens()
             _warm_levels()
+            if len(_levels["pdh"]) < 20:
+                _warm_levels_yahoo()
             _warm_opening_range()
+            if len(_levels["orh"]) < 20:
+                _warm_or_yahoo()
         except Exception as e:
             print("bg worker error:", e)
         time.sleep(120)
@@ -368,6 +513,32 @@ def _update_preopen(stocks):
         snap("ltp", False)
     elif mins >= 555 and not _preopen["final"]:   # 09:15 apram — freeze with open price
         snap("open", True)
+
+
+def _market_mood(stocks, indices):
+    """FEAR / HAPPY / CONFUSED / GREED — breadth + VIX + index move."""
+    if not stocks:
+        return {"mood": "UNKNOWN", "emoji": "❓", "note": "no data", "breadth": 0}
+    ups = sum(1 for r in stocks if r["chg"] > 0)
+    breadth = round(ups / len(stocks) * 100, 1)
+    vix = next((i for i in indices if "VIX" in i["symbol"]), None)
+    nifty = next((i for i in indices if "NIFTY 50" in i["symbol"]), None)
+    vix_chg = (vix or {}).get("chg", 0)
+    nf = (nifty or {}).get("chg", 0)
+    if breadth >= 65 and vix_chg <= 2:
+        m, e, note = "HAPPY", "😀", "Broad buying — trend trades work"
+    elif breadth <= 35 and vix_chg >= 3:
+        m, e, note = "FEAR", "😱", "Panic selling — avoid fresh longs, tight SL"
+    elif breadth <= 35:
+        m, e, note = "WEAK", "😟", "Selling pressure — favour short setups"
+    elif abs(nf) < 0.25 and 40 <= breadth <= 60:
+        m, e, note = "CONFUSED", "😐", "Choppy / rangebound — fewer trades, wait for breakout"
+    elif breadth >= 75 and vix_chg < 0:
+        m, e, note = "GREED", "🤑", "Euphoria — trail SL, avoid chasing"
+    else:
+        m, e, note = "MIXED", "🙂", "Stock-specific market — follow strong sectors"
+    return {"mood": m, "emoji": e, "note": note, "breadth": breadth,
+            "vix_chg": vix_chg, "nifty_chg": nf}
 
 
 def build_dashboard():
@@ -443,7 +614,11 @@ def build_dashboard():
         "preopen": {"up": [x for x in _preopen["rows"] if x["gap"] > 0][:12],
                     "down": [x for x in _preopen["rows"] if x["gap"] < 0][:12],
                     "final": _preopen["final"], "count": len(_preopen["rows"])},
+        "mood": _market_mood(stocks, indices),
+        "global": get_global_cues(),
         "levels_ready": bool(_levels["pdh"]),
+        "levels_diag": {**_diag, "pdh": len(_levels["pdh"]), "pwh": len(_levels["pwh"]),
+                        "orh": len(_levels["orh"])},
         "universe": len(stocks),
         "updated": time.strftime("%H:%M:%S", time.gmtime(time.time() + 19800)),
     }
