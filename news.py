@@ -261,3 +261,4 @@ def get_news_signals():
             "market_crash": crash[:5], "results": uniq(results)[:8],
             "fresh_window_hours": MAX_AGE_HOURS}
 
+
