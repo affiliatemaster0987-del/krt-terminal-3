@@ -23,7 +23,7 @@
       <div class="bias bull" id="mktBias">--</div>
     </div>
   </div>
-  <div class="idx-strip" id="idxStrip"></div>
+  <div class="idx-strip" id="idxStrip"></div>\n  <div class="mood-pill" id="moodPill"></div>
   <div class="cmd-right">
     <span class="countdown"><span class="lbl">Close in </span><span id="countdown">--:--:--</span></span>
     <button class="snd" id="sndBtn">🔇 Sound</button>
@@ -61,6 +61,21 @@
     <div class="feed" id="newsDanger" style="max-height:300px"></div>
   </div>
 
+  <div class="card w6">
+    <h2><span class="ic">🌍</span> Global Cues — Gap Direction <span class="tag live" id="glTag">LIVE</span></h2>
+    <div class="glb-grid" id="globalCues"></div>
+    <div class="hint">Global futures up = gap-up chance, down = gap-down chance. Directional guide only.</div>
+  </div>
+
+  <div class="card w6">
+    <h2><span class="ic">🎯</span> Options Watchlist — CE / PE Bias <span class="tag set">EDUCATIONAL</span></h2>
+    <div class="opt-wrap">
+      <div><div class="po-head up">📈 CE BIAS (strength)</div><div id="ceList"></div></div>
+      <div><div class="po-head dn">📉 PE BIAS (weakness)</div><div id="peList"></div></div>
+    </div>
+    <div class="hint">Ranked by trend + volume + sector strength. Educational only, not investment advice. Check liquidity and IV before any option trade.</div>
+  </div>
+
   <!-- ══ PRE-OPEN GAP ══ -->
   <div class="card w12">
     <h2><span class="ic">🌅</span> PRE-OPEN GAP LIST — 9:00–9:08 AM <span class="tag live" id="poTag">--</span>
@@ -83,6 +98,19 @@
   <div class="card">
     <h2><span class="ic">🕘</span> 1st 5-min Candle High Break <span class="tag live" id="orTag">--</span></h2>
     <div class="feed" id="orList" style="max-height:280px"></div>
+  </div>
+
+  <div class="card brk-list">
+    <h2><span class="ic">⤵</span> Chartink · Prev Day LOW Break <span class="tag bearTag" id="pdlTag">--</span></h2>
+    <div id="pdlList"></div>
+  </div>
+  <div class="card brk-list">
+    <h2><span class="ic">📉</span> Chartink · Prev Week LOW Break <span class="tag bearTag" id="pwlTag">--</span></h2>
+    <div id="pwlList"></div>
+  </div>
+  <div class="card brk-list">
+    <h2><span class="ic">🔎</span> Chartink · Other Scans <span class="tag live" id="ckOtherTag">--</span></h2>
+    <div id="ckOther"></div>
   </div>
 
   <!-- ══ SECTOR — STRONG ══ -->
