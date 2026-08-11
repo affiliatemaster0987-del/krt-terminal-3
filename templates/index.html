@@ -24,8 +24,9 @@
     </div>
   </div>
   <div class="idx-strip" id="idxStrip"></div>\n  <div class="mood-pill" id="moodPill"></div>
+  <div class="mood-rules" id="moodRules"></div>
   <div class="cmd-right">
-    <span class="countdown"><span class="lbl">Close in </span><span id="countdown">--:--:--</span></span>
+    <div class="mkt-status" id="mktStatus"></div>
     <button class="snd" id="sndBtn">🔇 Sound</button>
     <span class="live-dot"></span>
   </div>
@@ -38,6 +39,35 @@
 <div class="grid">
 
   <!-- ══ JACKPOT LIST ══ -->
+  <div class="card w12">
+    <h2><span class="ic">📊</span> AI PERFORMANCE — Accuracy Dashboard <span class="tag live" id="trkTag">--</span></h2>
+    <div class="acc-wrap" id="accBox"></div>
+    <div class="hint">Every signal is logged with entry, SL, T1/T2/T3 and exact times. Live prices decide the status. Accuracy builds over days — use it to judge which setups actually work.</div>
+  </div>
+
+  <div class="card w6">
+    <h2><span class="ic">⏳</span> RUNNING CALLS — Live Status <span class="tag live" id="liveTag">--</span></h2>
+    <div class="feed" id="liveCalls" style="max-height:400px"></div>
+  </div>
+  <div class="card w6">
+    <h2><span class="ic">✅</span> TODAY'S COMPLETED CALLS <span class="tag live" id="doneTag">--</span></h2>
+    <div class="feed" id="doneCalls" style="max-height:400px"></div>
+  </div>
+
+  <div class="card w6">
+    <h2><span class="ic">🏆</span> TOP AI CALLS <span class="tag live" id="topTag">--</span>
+      <span class="tier-btns" id="tierBtns">
+        <button data-t="75" onclick="setTier(75)">75+ GOOD</button>
+        <button data-t="80" onclick="setTier(80)">80+ STRONG</button>
+        <button data-t="85" onclick="setTier(85)">85+ PREMIUM</button>
+      </span></h2>
+    <div class="feed" id="topCalls" style="max-height:380px"></div>
+  </div>
+  <div class="card w6">
+    <h2><span class="ic">📈</span> MARKET BREADTH <span class="tag live">LIVE</span></h2>
+    <div id="breadthBox"></div>
+  </div>
+
   <div class="card w6 glow-bull">
     <h2><span class="ic">🎰</span> JACKPOT LIST — BUY Calls <span class="tag live" id="jpTag">--</span>
       <button class="btn wa" id="jpSendAll" style="margin-left:8px">🟢 Send all to WhatsApp</button></h2>
@@ -59,12 +89,6 @@
   <div class="card w6">
     <h2><span class="ic">🚨</span> NEWS DANGER — Negative / Crash <span class="tag bearTag">FAST</span></h2>
     <div class="feed" id="newsDanger" style="max-height:300px"></div>
-  </div>
-
-  <div class="card w6">
-    <h2><span class="ic">🌍</span> Global Cues — Gap Direction <span class="tag live" id="glTag">LIVE</span></h2>
-    <div class="glb-grid" id="globalCues"></div>
-    <div class="hint">Global futures up = gap-up chance, down = gap-down chance. Directional guide only.</div>
   </div>
 
   <div class="card w6">
@@ -101,15 +125,24 @@
   </div>
 
   <div class="card brk-list">
-    <h2><span class="ic">⤵</span> Chartink · Prev Day LOW Break <span class="tag bearTag" id="pdlTag">--</span></h2>
+    <h2><span class="ic">⤵</span> KRT · Prev Day LOW Break <span class="tag bearTag" id="pdlTag">--</span></h2>
     <div id="pdlList"></div>
   </div>
   <div class="card brk-list">
-    <h2><span class="ic">📉</span> Chartink · Prev Week LOW Break <span class="tag bearTag" id="pwlTag">--</span></h2>
+    <h2><span class="ic">📉</span> KRT · Prev Week LOW Break <span class="tag bearTag" id="pwlTag">--</span></h2>
     <div id="pwlList"></div>
   </div>
   <div class="card brk-list">
-    <h2><span class="ic">🔎</span> Chartink · Other Scans <span class="tag live" id="ckOtherTag">--</span></h2>
+    <h2><span class="ic">🕐</span> KRT · First 5-min High Break <span class="tag live" id="or5Tag">--</span></h2>
+    <div id="or5List"></div>
+  </div>
+  <div class="card brk-list">
+    <h2><span class="ic">🕒</span> KRT · First 15-min High Break <span class="tag live" id="or15Tag">--</span></h2>
+    <div id="or15List"></div>
+  </div>
+
+  <div class="card brk-list">
+    <h2><span class="ic">🔎</span> KRT · My Scanner Calls <span class="tag live" id="ckOtherTag">--</span></h2>
     <div id="ckOther"></div>
   </div>
 
@@ -175,8 +208,13 @@
     <div class="feed" id="alertFeed" style="max-height:320px"></div>
   </div>
   <div class="card w6">
-    <h2><span class="ic">📡</span> Fresh Market News (last 6 hrs) <span class="tag live">LIVE</span></h2>
+    <h2><span class="ic">📡</span> Fresh Market News (last 10 hrs) <span class="tag live">LIVE</span></h2>
     <div class="feed" id="newsList" style="max-height:320px"></div>
+  </div>
+
+  <div class="card w12">
+    <h2><span class="ic">🗂</span> SIGNAL HISTORY — last 40 <span class="tag set">ALL SOURCES</span></h2>
+    <div class="feed" id="histBox" style="max-height:420px"></div>
   </div>
 
 </div>
