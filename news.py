@@ -180,7 +180,8 @@ def get_news():
                 print("news feed error:", source, e)
         items.sort(key=lambda x: (_ORDER.get(x["tag"], 8), x["age_h"], -x["impact"]))
         _news_cache.update(items=items[:25], ts=now)
-        return _news_cache["items"]_ALIAS = {"INFOSYS": "INFY", "HDFC": "HDFCBANK", "ICICI": "ICICIBANK", "SBI": "SBIN",
+        return _news_cache["items"]
+        _ALIAS = {"INFOSYS": "INFY", "HDFC": "HDFCBANK", "ICICI": "ICICIBANK", "SBI": "SBIN",
           "TATA MOTORS": "TATAMOTORS", "TATA STEEL": "TATASTEEL", "VARUN": "VBL",
           "AXIS": "AXISBANK", "KOTAK": "KOTAKBANK", "SUN PHARMA": "SUNPHARMA",
           "COAL INDIA": "COALINDIA", "POWER GRID": "POWERGRID", "AUROBINDO": "AUROPHARMA",
