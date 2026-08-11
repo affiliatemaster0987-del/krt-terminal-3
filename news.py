@@ -1,380 +1,252 @@
-"""
-KRT — Indicators + Signal Tracker (no historical API needed)
-------------------------------------------------------------
-• Live polls-la irundhu 1-minute candles self-build pannum
-• RSI(14), EMA(9/21), ATR(14), VWAP, ADX(14) — real calculation
-• ATR-based SL / T1 / T2 / T3 (fixed % illa)
-• Signal tracker: ovvoru jackpot/danger signal-um log agum,
-  T1 / SL hit track pannum -> WIN RATE
-Day 1: indicators ~30-45 min market open aana apram ready agum.
-"""
-import time, threading, json, os
-from datetime import datetime, timedelta
+"""KRT — News AI 4.0 — fresh Indian market news only"""
+import time, threading, re
+import urllib.request
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 
+MAX_AGE_HOURS = 10
+POLL_SECONDS = 45
+
+FEEDS = [
+    ("Moneycontrol Mkt",  "https://www.moneycontrol.com/rss/marketreports.xml"),
+    ("Moneycontrol Buzz", "https://www.moneycontrol.com/rss/buzzingstocks.xml"),
+    ("Moneycontrol Res",  "https://www.moneycontrol.com/rss/results.xml"),
+    ("Moneycontrol Biz",  "https://www.moneycontrol.com/rss/business.xml"),
+    ("ET Markets",        "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms"),
+    ("ET Stocks",         "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms"),
+    ("BS Markets",        "https://www.business-standard.com/rss/markets-106.rss"),
+    ("BS Companies",      "https://www.business-standard.com/rss/companies-101.rss"),
+]
+
+RESULT_WORDS = ["q1 results", "q2 results", "q3 results", "q4 results", "quarterly results",
+                "net profit", "revenue rises", "revenue falls", "ebitda", "earnings",
+                "profit jumps", "profit falls", "profit rises", "beats estimates",
+                "misses estimates", "guidance", "dividend declared", "results today"]
+ORDER_WORDS = ["order win", "wins order", "bags order", "wins contract", "bags contract",
+               "new order", "letter of intent", "awarded", "secures order",
+               "defence contract", "government order", "export order", "signs pact",
+               "signs mou", "acquires", "acquisition", "stake buy", "expansion plan"]
+COMPANY_RISK = ["fraud", "probe", "penalty", "raid", "resigns", "steps down",
+                "cfo quits", "ceo quits", "auditor resigns", "default", "insolvency",
+                "nclt", "downgrade", "cut to sell", "pledge", "promoter sells",
+                "stake sale", "plant shut", "fire at plant", "recall", "ban",
+                "licence cancelled", "gst notice", "show cause", "sebi order"]
+STRONG_POS = ["record high", "all-time high", "lifetime high", "upper circuit",
+              "profit surges", "beats estimates", "multibagger", "buyback",
+              "bonus issue", "stock split", "upgrade to buy", "target raised"]
+POS_WORDS = ["surge", "rally", "gains", "jumps", "soars", "upgrade", "outperform",
+             "strong growth", "expansion", "inflows", "recovery", "rate cut", "revival"]
+NEG_WORDS = ["falls", "drops", "slump", "tanks", "plunges", "lower circuit", "weak",
+             "outflows", "sell-off", "cuts guidance", "loss widens"]
+
+CRASH_EVENT = ["war", "airstrike", "missile attack", "invasion", "nuclear",
+               "terror attack", "military strike", "sanctions on", "border conflict",
+               "market crash", "bloodbath", "panic selling", "circuit breaker",
+               "black monday", "meltdown", "sensex crashes", "nifty crashes",
+               "sensex tanks", "nifty tanks", "rupee crashes", "crude spikes",
+               "recession fears", "global sell-off", "trade war", "tariff shock"]
+MARKET_CTX = ["sensex", "nifty", "market", "markets", "stocks", "stock", "dalal street",
+              "investors", "india", "indian", "rupee", "crude", "oil", "fii", "dii", "bse", "nse",
+              "bank", "banks", "banking", "rbi", "sebi", "repo", "inflation", "gdp", "ipo",
+              "war", "tariff", "trade", "fed", "policy", "results", "profit", "revenue",
+              "shares", "share", "equity", "sector", "index", "futures", "psu", "gst"]
+NOISE = ["bitcoin", "ethereum", "crypto", "buffett", "berkshire", "how to",
+         "should you", "here's why you", "top 5 tips", "webinar", "podcast",
+         "horoscope", "in 5 years", "best sip", "astrology", "recipe"]
+
+STOCK_KEYWORDS = ["RELIANCE", "TCS", "HDFC", "INFOSYS", "INFY", "SBI", "ICICI", "ITC",
+                  "TATA MOTORS", "TATA STEEL", "BEL", "HAL", "VARUN", "VBL", "ADANI",
+                  "NIFTY", "SENSEX", "MARUTI", "AXIS", "KOTAK", "WIPRO", "BAJAJ",
+                  "SUN PHARMA", "CIPLA", "TITAN", "TRENT", "ZOMATO", "SWIGGY", "PAYTM",
+                  "NTPC", "ONGC", "COAL INDIA", "POWER GRID", "MOTHERSON", "AUROBINDO",
+                  "FORTIS", "HINDALCO", "GRASIM", "DIXON", "LT", "L&T", "VEDANTA",
+                  "JSW", "DLF", "DMART", "NESTLE", "BRITANNIA", "APOLLO", "CROMPTON",
+                  "CHOLA", "BHEL", "IRFC", "RVNL", "IRCTC", "PFC", "REC", "GAIL",
+                  "BPCL", "IOC", "TECH MAHINDRA", "HCL", "LTIMINDTREE", "PERSISTENT"]
+
+_news_cache = {"items": [], "ts": 0}
 _lock = threading.Lock()
-CANDLES = {}          # sym -> [{t,o,h,l,c,v}] 1-min
-PREV_DAY = {}         # sym -> {"high","low","close","date"}
-_today = ""
-
-MAX_CANDLES = 400     # ~6.5 hours of 1-min
 
 
-def _ist():
-    return datetime.utcnow() + timedelta(hours=5, minutes=30)
+def _age_hours(pubdate):
+    if not pubdate:
+        return None
+    try:
+        dt = parsedate_to_datetime(pubdate)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0
+    except Exception:
+        return None
 
 
-# ═════════ candle builder ═════════
-def feed(rows):
-    """Ovvoru dashboard poll-layum call agum. rows = live stock list."""
-    global _today
-    now = _ist()
-    day = now.strftime("%Y-%m-%d")
-    minute = now.replace(second=0, microsecond=0).timestamp()
+def _ago(h):
+    if h is None:
+        return ""
+    m = int(h * 60)
+    if m < 1:
+        return "just now"
+    if m < 60:
+        return f"{m}m ago"
+    return f"{int(h)}h ago"
 
+
+def _is_noise(t):
+    return any(w in t for w in NOISE)
+
+
+def _india_relevant(t):
+    return any(w in t for w in MARKET_CTX) or any(s.lower() in t for s in STOCK_KEYWORDS)
+
+
+def _classify(title):
+    t = title.lower()
+    ev = [w for w in CRASH_EVENT if w in t]
+    if ev and _india_relevant(t):
+        return "CRASH RISK", min(10, 8 + len(ev))
+    if any(w in t for w in COMPANY_RISK):
+        return "COMPANY RISK", min(10, 7 + sum(1 for w in COMPANY_RISK if w in t))
+    if any(w in t for w in ORDER_WORDS):
+        return "ORDER WIN", min(10, 7 + sum(1 for w in ORDER_WORDS if w in t))
+    if any(w in t for w in RESULT_WORDS):
+        pos = sum(1 for w in ["profit jumps", "profit rises", "beats estimates",
+                              "revenue rises", "dividend declared"] if w in t)
+        neg = sum(1 for w in ["profit falls", "misses estimates", "loss", "revenue falls"] if w in t)
+        return "RESULTS", min(10, 6 + max(pos, neg) * 2)
+    if any(w in t for w in STRONG_POS):
+        return "STRONG POSITIVE", min(10, 8 + sum(1 for w in STRONG_POS if w in t))
+    pos = sum(1 for w in POS_WORDS if w in t)
+    neg = sum(1 for w in NEG_WORDS if w in t)
+    if pos > neg:
+        return "POSITIVE", min(9, 5 + pos * 2)
+    if neg > pos:
+        return "NEGATIVE", min(9, 5 + neg * 2)
+    return "NEUTRAL", 3
+
+
+def _affected(title):
+    up = title.upper()
+    return [s for s in STOCK_KEYWORDS if s in up][:4]
+
+
+def _fetch_feed(source, url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 KRT-Terminal"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        xml = r.read()
+    root = ET.fromstring(xml)
+    out = []
+    for item in root.iter("item"):
+        title = (item.findtext("title") or "").strip()
+        if not title:
+            continue
+        low = title.lower()
+        age = _age_hours((item.findtext("pubDate") or "").strip())
+        if age is None or age > MAX_AGE_HOURS:
+            continue
+        if _is_noise(low):
+            continue
+        if not _india_relevant(low):
+            continue
+        tag, impact = _classify(title)
+        if tag == "NEUTRAL" and impact < 4:
+            continue
+        out.append({"source": source, "title": title,
+                    "link": (item.findtext("link") or "").strip(),
+                    "age_h": round(age, 2), "ago": _ago(age),
+                    "tag": tag, "impact": impact, "stocks": _affected(title)})
+    return out[:15]
+
+
+_ORDER = {"CRASH RISK": 0, "COMPANY RISK": 1, "ORDER WIN": 2, "RESULTS": 3,
+          "STRONG POSITIVE": 4, "NEGATIVE": 5, "POSITIVE": 6, "NEUTRAL": 7}
+
+
+def get_news():
     with _lock:
-        if _today and _today != day:            # naal maarina -> roll over
-            for sym, cs in CANDLES.items():
-                if cs:
-                    PREV_DAY[sym] = {"high": max(c["h"] for c in cs),
-                                     "low": min(c["l"] for c in cs),
-                                     "close": cs[-1]["c"], "date": _today}
-            CANDLES.clear()
-        _today = day
+        now = time.time()
+        if _news_cache["items"] and now - _news_cache["ts"] < POLL_SECONDS:
+            return _news_cache["items"]
+        items, seen = [], set()
+        for source, url in FEEDS:
+            try:
+                for it in _fetch_feed(source, url):
+                    key = re.sub(r"\W+", "", it["title"].lower())[:60]
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    items.append(it)
+            except Exception as e:
+                print("news feed error:", source, e)
+        items.sort(key=lambda x: (_ORDER.get(x["tag"], 8), x["age_h"], -x["impact"]))
+        _news_cache.update(items=items[:25], ts=now)
+        return _news_cache["items"]_ALIAS = {"INFOSYS": "INFY", "HDFC": "HDFCBANK", "ICICI": "ICICIBANK", "SBI": "SBIN",
+          "TATA MOTORS": "TATAMOTORS", "TATA STEEL": "TATASTEEL", "VARUN": "VBL",
+          "AXIS": "AXISBANK", "KOTAK": "KOTAKBANK", "SUN PHARMA": "SUNPHARMA",
+          "COAL INDIA": "COALINDIA", "POWER GRID": "POWERGRID", "AUROBINDO": "AUROPHARMA",
+          "L&T": "LT", "VEDANTA": "VEDL", "TECH MAHINDRA": "TECHM", "HCL": "HCLTECH",
+          "LTIMINDTREE": "LTIM", "NESTLE": "NESTLEIND", "APOLLO": "APOLLOHOSP",
+          "CHOLA": "CHOLAFIN", "REC": "RECLTD"}
 
-        for r in rows:
-            sym, px = r.get("symbol"), r.get("ltp")
-            if not sym or not px:
+GOOD_TAGS = ("ORDER WIN", "STRONG POSITIVE", "POSITIVE")
+BAD_TAGS = ("COMPANY RISK", "NEGATIVE")
+
+
+def get_news_signals():
+    jackpot, danger, crash, results = [], [], [], []
+    smap = {}
+    try:
+        from smart_client import build_dashboard
+        d = build_dashboard()
+        for r in (d.get("gainers", []) + d.get("losers", []) + d.get("volume", [])):
+            smap[r["symbol"]] = r
+    except Exception as e:
+        print("news signals quote error:", e)
+
+    for n in get_news():
+        tag = n["tag"]
+        base = {"headline": n["title"][:130], "impact": n["impact"], "tag": tag,
+                "ago": n["ago"], "source": n["source"], "link": n.get("link", "")}
+        if tag == "CRASH RISK":
+            crash.append({**base,
+                          "action": "MARKET CRASH RISK — avoid fresh longs, keep SL tight"})
+            continue
+        syms = [_ALIAS.get(s, s) for s in n.get("stocks", [])]
+        real = [s for s in syms if s not in ("NIFTY", "SENSEX")]
+        sym = (real or syms or [None])[0]
+        me = smap.get(sym) if sym else None
+        row = {**base, "symbol": sym or "MARKET",
+               "chg": (me or {}).get("chg"), "ltp": (me or {}).get("ltp")}
+
+        if tag == "RESULTS":
+            row["verdict"] = ("RESULT — price up, momentum"
+                              if me and (me.get("chg") or 0) > 0.5
+                              else "RESULT — watch price reaction")
+            results.append(row)
+            if me and (me.get("chg") or 0) > 1:
+                jackpot.append({**row, "verdict": "RESULT JACKPOT — beat + price up"})
+            elif me and (me.get("chg") or 0) < -1:
+                danger.append({**row, "verdict": "RESULT DANGER — miss + price down"})
+        elif tag in GOOD_TAGS and n["impact"] >= 7:
+            row["verdict"] = ("JACKPOT — news + price confirm"
+                              if me and (me.get("chg") or 0) > 0.5
+                              else "WAIT — needs technical confirmation")
+            jackpot.append(row)
+        elif tag in BAD_TAGS and n["impact"] >= 7:
+            row["verdict"] = ("DANGER — news + price falling"
+                              if me and (me.get("chg") or 0) < -0.5
+                              else "WATCH — company risk news")
+            danger.append(row)
+
+    def uniq(lst):
+        seen, out = set(), []
+        for x in lst:
+            k = str(x.get("symbol", "")) + x.get("headline", "")[:30]
+            if k in seen:
                 continue
-            vol = r.get("volume") or 0
-            cs = CANDLES.setdefault(sym, [])
-            if cs and cs[-1]["t"] == minute:
-                c = cs[-1]
-                c["h"] = max(c["h"], px); c["l"] = min(c["l"], px)
-                c["c"] = px; c["v"] = vol
-            else:
-                cs.append({"t": minute, "o": px, "h": px, "l": px, "c": px, "v": vol})
-                if len(cs) > MAX_CANDLES:
-                    del cs[0:len(cs) - MAX_CANDLES]
-
-
-# ═════════ indicator math ═════════
-def _ema(vals, n):
-    if len(vals) < n:
-        return None
-    k = 2 / (n + 1)
-    e = sum(vals[:n]) / n
-    for v in vals[n:]:
-        e = v * k + e * (1 - k)
-    return e
-
-
-def _rsi(closes, n=14):
-    if len(closes) < n + 1:
-        return None
-    gains = losses = 0.0
-    for i in range(1, n + 1):
-        d = closes[i] - closes[i - 1]
-        gains += max(d, 0); losses += max(-d, 0)
-    ag, al = gains / n, losses / n
-    for i in range(n + 1, len(closes)):
-        d = closes[i] - closes[i - 1]
-        ag = (ag * (n - 1) + max(d, 0)) / n
-        al = (al * (n - 1) + max(-d, 0)) / n
-    if al == 0:
-        return 100.0
-    rs = ag / al
-    return 100 - (100 / (1 + rs))
-
-
-def _atr(cs, n=14):
-    if len(cs) < n + 1:
-        return None
-    trs = []
-    for i in range(1, len(cs)):
-        h, l, pc = cs[i]["h"], cs[i]["l"], cs[i - 1]["c"]
-        trs.append(max(h - l, abs(h - pc), abs(l - pc)))
-    if len(trs) < n:
-        return None
-    a = sum(trs[:n]) / n
-    for tr in trs[n:]:
-        a = (a * (n - 1) + tr) / n
-    return a
-
-
-def _adx(cs, n=14):
-    if len(cs) < n * 2:
-        return None
-    plus, minus, trs = [], [], []
-    for i in range(1, len(cs)):
-        up = cs[i]["h"] - cs[i - 1]["h"]
-        dn = cs[i - 1]["l"] - cs[i]["l"]
-        plus.append(up if (up > dn and up > 0) else 0.0)
-        minus.append(dn if (dn > up and dn > 0) else 0.0)
-        h, l, pc = cs[i]["h"], cs[i]["l"], cs[i - 1]["c"]
-        trs.append(max(h - l, abs(h - pc), abs(l - pc)))
-    def sm(x):
-        s = sum(x[:n])
-        out = [s]
-        for v in x[n:]:
-            s = s - s / n + v
-            out.append(s)
+            seen.add(k); out.append(x)
         return out
-    st, sp, sm_ = sm(trs), sm(plus), sm(minus)
-    dxs = []
-    for i in range(len(st)):
-        if st[i] == 0:
-            continue
-        pdi = 100 * sp[i] / st[i]; mdi = 100 * sm_[i] / st[i]
-        if pdi + mdi:
-            dxs.append(100 * abs(pdi - mdi) / (pdi + mdi))
-    if len(dxs) < n:
-        return None
-    return sum(dxs[-n:]) / n
 
-
-def _vwap(cs):
-    tv = pv = 0.0
-    prev_v = 0
-    for c in cs:
-        v = max((c["v"] or 0) - prev_v, 0)
-        prev_v = c["v"] or prev_v
-        tp = (c["h"] + c["l"] + c["c"]) / 3
-        pv += tp * v; tv += v
-    return (pv / tv) if tv else None
-
-
-def opening_range(sym):
-    """First 5-min & 15-min high/low from self-built candles (09:15 onward)."""
-    with _lock:
-        cs = list(CANDLES.get(sym, []))
-    if not cs:
-        return {}
-    start = None
-    for c in cs:
-        t = datetime.utcfromtimestamp(c["t"] + 19800)
-        if t.hour == 9 and t.minute >= 15:
-            start = c["t"]; break
-    if start is None:
-        return {}
-    five = [c for c in cs if start <= c["t"] < start + 300]
-    fift = [c for c in cs if start <= c["t"] < start + 900]
-    out = {}
-    if five:
-        out["or5h"] = round(max(c["h"] for c in five), 2)
-        out["or5l"] = round(min(c["l"] for c in five), 2)
-    if fift and len(fift) >= 10:
-        out["or15h"] = round(max(c["h"] for c in fift), 2)
-        out["or15l"] = round(min(c["l"] for c in fift), 2)
-    return out
-
-
-def indicators(sym):
-    """Return dict of live indicators for a symbol (None-safe)."""
-    with _lock:
-        cs = list(CANDLES.get(sym, []))
-    if len(cs) < 5:
-        return {"ready": False, "bars": len(cs)}
-    closes = [c["c"] for c in cs]
-    e9, e21 = _ema(closes, 9), _ema(closes, 21)
-    out = {
-        "ready": len(cs) >= 20, "bars": len(cs),
-        "rsi": round(_rsi(closes), 1) if _rsi(closes) is not None else None,
-        "ema9": round(e9, 2) if e9 else None,
-        "ema21": round(e21, 2) if e21 else None,
-        "atr": round(_atr(cs), 2) if _atr(cs) else None,
-        "adx": round(_adx(cs), 1) if _adx(cs) else None,
-        "vwap": round(_vwap(cs), 2) if _vwap(cs) else None,
-        "day_high": round(max(c["h"] for c in cs), 2),
-        "day_low": round(min(c["l"] for c in cs), 2),
-    }
-    pd = PREV_DAY.get(sym)
-    if pd:
-        out["pdh"] = pd["high"]; out["pdl"] = pd["low"]; out["pdc"] = pd["close"]
-    out.update(opening_range(sym))
-    return out
-
-
-def enrich(rows):
-    """Attach indicators + ATR-based levels to each stock row."""
-    for r in rows:
-        ind = indicators(r["symbol"])
-        r["ind"] = ind
-        atr = ind.get("atr")
-        px = r.get("ltp") or 0
-        if atr and px:
-            r["sl_long"] = round(px - 1.5 * atr, 2)
-            r["t1_long"] = round(px + 1.5 * atr, 2)
-            r["t2_long"] = round(px + 2.5 * atr, 2)
-            r["t3_long"] = round(px + 4.0 * atr, 2)
-            r["sl_short"] = round(px + 1.5 * atr, 2)
-            r["t1_short"] = round(px - 1.5 * atr, 2)
-            r["t2_short"] = round(px - 2.5 * atr, 2)
-            r["atr_pct"] = round(atr / px * 100, 2)
-    return rows
-
-
-def confirmations(r):
-    """Real technical confirmations — jackpot scoring ku."""
-    ind = r.get("ind") or {}
-    tags, score = [], 0
-    px = r.get("ltp") or 0
-    if ind.get("rsi") is not None:
-        if 55 <= ind["rsi"] <= 75:
-            tags.append(f"RSI {ind['rsi']}"); score += 8
-        elif ind["rsi"] > 75:
-            tags.append(f"RSI {ind['rsi']} overbought")
-    if ind.get("ema9") and ind.get("ema21") and ind["ema9"] > ind["ema21"]:
-        tags.append("EMA 9>21"); score += 8
-    if ind.get("vwap") and px > ind["vwap"]:
-        tags.append("Above VWAP"); score += 8
-    if ind.get("adx") and ind["adx"] >= 25:
-        tags.append(f"ADX {ind['adx']}"); score += 8
-    if ind.get("day_high") and px >= ind["day_high"] * 0.999:
-        tags.append("At day high"); score += 6
-    if ind.get("pdh") and px > ind["pdh"]:
-        tags.append("PDH break"); score += 10
-    return tags, score
-
-
-def confirmations_short(r):
-    ind = r.get("ind") or {}
-    tags, score = [], 0
-    px = r.get("ltp") or 0
-    if ind.get("rsi") is not None and ind["rsi"] <= 45:
-        tags.append(f"RSI {ind['rsi']}"); score += 8
-    if ind.get("ema9") and ind.get("ema21") and ind["ema9"] < ind["ema21"]:
-        tags.append("EMA 9<21"); score += 8
-    if ind.get("vwap") and px < ind["vwap"]:
-        tags.append("Below VWAP"); score += 8
-    if ind.get("adx") and ind["adx"] >= 25:
-        tags.append(f"ADX {ind['adx']}"); score += 8
-    if ind.get("day_low") and px <= ind["day_low"] * 1.001:
-        tags.append("At day low"); score += 6
-    if ind.get("pdl") and px < ind["pdl"]:
-        tags.append("PDL break"); score += 10
-    return tags, score
-
-
-# ═════════ SIGNAL TRACKER (T1/T2/T3 + times + accuracy) ═════════
-TRACK_FILE = "/tmp/krt_signals.json"
-_signals = []
-COOLDOWN_MIN = 15
-
-
-def _load():
-    global _signals
-    try:
-        if os.path.exists(TRACK_FILE):
-            _signals = json.load(open(TRACK_FILE))
-    except Exception:
-        _signals = []
-
-
-def _save():
-    try:
-        json.dump(_signals[-1500:], open(TRACK_FILE, "w"))
-    except Exception:
-        pass
-
-
-_load()
-
-
-def _mins_since(hhmm, date):
-    try:
-        d = datetime.strptime(date + " " + hhmm, "%Y-%m-%d %H:%M")
-        return (_ist() - d).total_seconds() / 60
-    except Exception:
-        return 9999
-
-
-def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="", source="JACKPOT"):
-    """Cooldown: same stock+side 15 min-ku ulla thirumba log aagadhu."""
-    today = _ist().strftime("%Y-%m-%d")
-    for s in reversed(_signals):
-        if s["sym"] == sym and s["side"] == side and s["date"] == today:
-            if s["status"] in ("LIVE", "T1 HIT", "T2 HIT"):
-                return None
-            if _mins_since(s["ts"], s["date"]) < COOLDOWN_MIN:
-                return None
-            break
-    sig = {"id": f"{sym}-{side}-{_ist().strftime('%H%M%S')}", "sym": sym, "side": side,
-           "entry": entry, "sl": sl, "t1": t1, "t2": t2, "t3": t3,
-           "score": score, "setup": setup, "source": source,
-           "ts": _ist().strftime("%H:%M"), "date": today,
-           "status": "LIVE", "t1_at": None, "t2_at": None, "t3_at": None,
-           "sl_at": None, "done_at": None, "best": entry, "pnl_pct": None}
-    _signals.append(sig); _save()
-    return sig
-
-
-def update_tracker(price_map):
-    changed = []
-    now = _ist().strftime("%H:%M")
-    for s in _signals:
-        if s["status"] in ("TARGET COMPLETED", "SL HIT", "EXPIRED"):
-            continue
-        px = price_map.get(s["sym"])
-        if not px:
-            continue
-        buy = s["side"] == "BUY"
-        # best price after signal
-        s["best"] = max(s["best"], px) if buy else min(s["best"], px)
-        s["pnl_pct"] = round(((px - s["entry"]) if buy else (s["entry"] - px)) / s["entry"] * 100, 2)
-        hit = lambda lvl: (px >= lvl) if buy else (px <= lvl)
-        stop = (px <= s["sl"]) if buy else (px >= s["sl"])
-        if stop:
-            s.update(status="SL HIT", sl_at=now, done_at=now); changed.append(s); continue
-        if s["t1"] and not s["t1_at"] and hit(s["t1"]):
-            s.update(t1_at=now, status="T1 HIT"); changed.append(s)
-        if s["t2"] and not s["t2_at"] and hit(s["t2"]):
-            s.update(t2_at=now, status="T2 HIT"); changed.append(s)
-        if s["t3"] and not s["t3_at"] and hit(s["t3"]):
-            s.update(t3_at=now, status="TARGET COMPLETED", done_at=now); changed.append(s)
-        # market close -> expire
-        n = _ist()
-        if n.hour >= 15 and n.minute >= 30 and s["status"] in ("LIVE", "T1 HIT", "T2 HIT"):
-            s.update(status="EXPIRED" if s["status"] == "LIVE" else s["status"], done_at=now)
-    if changed:
-        _save()
-    return changed
-
-
-def _acc(rows):
-    closed = [s for s in rows if s["status"] in ("TARGET COMPLETED", "SL HIT", "T1 HIT", "T2 HIT", "EXPIRED")
-              and s["status"] != "LIVE"]
-    settled = [s for s in rows if s["status"] in ("TARGET COMPLETED", "SL HIT", "EXPIRED", "T1 HIT", "T2 HIT")]
-    wins = [s for s in settled if s["t1_at"]]
-    sl = [s for s in settled if s["status"] == "SL HIT"]
-    run = [s for s in rows if s["status"] in ("LIVE", "T1 HIT", "T2 HIT")]
-    n = len(settled)
-    t1 = len([s for s in settled if s["t1_at"]])
-    t2 = len([s for s in settled if s["t2_at"]])
-    t3 = len([s for s in settled if s["t3_at"]])
-    buys = [s for s in settled if s["side"] == "BUY"]
-    sells = [s for s in settled if s["side"] == "SELL"]
-    pct = lambda a, b: round(a / b * 100, 1) if b else None
-    return {"total": len(rows), "wins": len(wins), "sl": len(sl), "running": len(run),
-            "accuracy": pct(len(wins), n),
-            "t1_rate": pct(t1, n), "t2_rate": pct(t2, n), "t3_rate": pct(t3, n),
-            "buy_acc": pct(len([s for s in buys if s["t1_at"]]), len(buys)),
-            "sell_acc": pct(len([s for s in sells if s["t1_at"]]), len(sells)),
-            "avg_pnl": round(sum(s["pnl_pct"] or 0 for s in settled) / n, 2) if n else 0}
-
-
-def stats():
-    today = _ist().strftime("%Y-%m-%d")
-    d7 = (_ist() - timedelta(days=7)).strftime("%Y-%m-%d")
-    d30 = (_ist() - timedelta(days=30)).strftime("%Y-%m-%d")
-    t_rows = [s for s in _signals if s["date"] == today]
-    completed = [s for s in t_rows if s["status"] in ("TARGET COMPLETED", "SL HIT", "T1 HIT", "T2 HIT", "EXPIRED")]
-    return {
-        "today": _acc(t_rows),
-        "d7": _acc([s for s in _signals if s["date"] >= d7]),
-        "d30": _acc([s for s in _signals if s["date"] >= d30]),
-        "live": [s for s in t_rows if s["status"] in ("LIVE", "T1 HIT", "T2 HIT")][::-1][:15],
-        "completed": completed[::-1][:20],
-        "history": _signals[-60:][::-1],
-        "top": sorted([s for s in t_rows if (s.get("score") or 0) >= 75],
-                      key=lambda x: -(x.get("score") or 0))[:25],
-    }
+    return {"jackpot": uniq(jackpot)[:10], "danger": uniq(danger)[:10],
+            "market_crash": crash[:5], "results": uniq(results)[:8],
+            "fresh_window_hours": MAX_AGE_HOURS}
