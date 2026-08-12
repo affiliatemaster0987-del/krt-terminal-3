@@ -10,6 +10,7 @@ Environment variables (Render → Environment):
 """
 import os, time, math, random, threading, json
 import urllib.request
+import indicators as IND
 from datetime import datetime, timedelta
 
 # ───────────────────────── INDICES (fixed tokens) ─────────────────────────
@@ -554,6 +555,14 @@ def build_dashboard():
         r["pwh"] = _levels["pwh"].get(s)
         r["orh"] = _levels["orh"].get(s)
 
+    # ── self-built candles + real indicators ──
+    try:
+        IND.feed(stocks)
+        IND.enrich(stocks)
+        IND.update_tracker({r["symbol"]: r["ltp"] for r in stocks})
+    except Exception as e:
+        print("indicator error:", e)
+
     _update_preopen(stocks)
 
     gainers = sorted(stocks, key=lambda r: r["chg"], reverse=True)[:25]
@@ -606,7 +615,73 @@ def build_dashboard():
                            "reason": f"Sharp fall {r['chg']}%", "chg": r["chg"]})
     alerts = alerts[:20]
 
+    # ── market status ──
+    n = _ist_now(); mins = n.hour * 60 + n.minute
+    if mins < 555:
+        mstat = {"state": "PRE", "text": "MARKET OPENS AT 09:15 AM",
+                 "sub": "Pre-open 09:00 - 09:15"}
+    elif mins <= 930:
+        mstat = {"state": "OPEN", "text": "MARKET OPEN",
+                 "sub": "09:15 AM - 03:30 PM"}
+    else:
+        mstat = {"state": "CLOSED", "text": "MARKET CLOSED",
+                 "sub": "Next open: 09:15 AM"}
+
+    # ── breadth ──
+    adv = sum(1 for r in stocks if r["chg"] > 0)
+    dec = sum(1 for r in stocks if r["chg"] < 0)
+    unch = len(stocks) - adv - dec
+    above_v = sum(1 for r in stocks if (r.get("ind") or {}).get("vwap") and r["ltp"] > r["ind"]["vwap"])
+    with_v = sum(1 for r in stocks if (r.get("ind") or {}).get("vwap"))
+    breadth = {"adv": adv, "dec": dec, "unch": unch,
+               "above_vwap": round(above_v / with_v * 100, 1) if with_v else None,
+               "below_vwap": round((1 - above_v / with_v) * 100, 1) if with_v else None,
+               "bias": "Bullish" if adv > dec * 1.3 else "Bearish" if dec > adv * 1.3 else "Neutral"}
+
+    # ── server-side signal generation (tracked even if browser closed) ──
+    try:
+        srank = {x["sector"]: i + 1 for i, x in enumerate(sectors)}
+        for r in stocks:
+            ind = r.get("ind") or {}
+            tags, tech = IND.confirmations(r)
+            if r["chg"] >= 1 and (r.get("volume") or 0) > 3e5:
+                vol_b = 6 if (r.get("volume") or 0) > 1e7 else 0
+                sc_ = 52 + min(24, round(r["chg"] * 5)) + tech + vol_b + (8 if srank.get(r["sector"], 99) <= 3 else 0)
+                sl_ = r.get("sl_long") or round(r["ltp"] * 0.99, 2)
+                t1_ = r.get("t1_long") or round(r["ltp"] * 1.01, 2)
+                t2_ = r.get("t2_long") or round(r["ltp"] * 1.02, 2)
+                t3_ = r.get("t3_long") or round(r["ltp"] * 1.035, 2)
+                if sc_ >= 75:
+                    IND.log_signal(r["symbol"], "BUY", r["ltp"], sl_, t1_, t2_, t3_,
+                                   min(99, sc_), " + ".join(tags) or "Momentum", "JACKPOT")
+            tags2, tech2 = IND.confirmations_short(r)
+            if r["chg"] <= -1:
+                vol_b2 = 6 if (r.get("volume") or 0) > 1e7 else 0
+                sc2 = 52 + min(24, round(abs(r["chg"]) * 5)) + tech2 + vol_b2 + (8 if srank.get(r["sector"], 99) >= len(sectors) - 2 else 0)
+                sl2 = r.get("sl_short") or round(r["ltp"] * 1.01, 2)
+                t1s = r.get("t1_short") or round(r["ltp"] * 0.99, 2)
+                t2s = r.get("t2_short") or round(r["ltp"] * 0.98, 2)
+                if sc2 >= 75:
+                    IND.log_signal(r["symbol"], "SELL", r["ltp"], sl2, t1s, t2s, None,
+                                   min(99, sc2), " + ".join(tags2) or "Weak momentum", "DANGER")
+    except Exception as e:
+        print("signal gen error:", e)
+
+    # ── opening-range break lists from own candles ──
+    or5, or15 = [], []
+    for r in stocks:
+        ind = r.get("ind") or {}
+        if ind.get("or5h") and r["ltp"] > ind["or5h"] and r["chg"] > 0:
+            or5.append({**{k: r[k] for k in ("symbol", "ltp", "chg", "volume", "sector")},
+                        "level": ind["or5h"], "dir": "up"})
+        if ind.get("or15h") and r["ltp"] > ind["or15h"] and r["chg"] > 0:
+            or15.append({**{k: r[k] for k in ("symbol", "ltp", "chg", "volume", "sector")},
+                         "level": ind["or15h"], "dir": "up"})
+    or5.sort(key=lambda x: -x["chg"]); or15.sort(key=lambda x: -x["chg"])
+
     return {
+        "status": mstat, "breadth": breadth,
+        "or5": or5[:12], "or15": or15[:12],
         "mode": mode, "indices": indices, "gainers": gainers, "losers": losers,
         "volume": by_vol, "alerts": alerts, "sectors": sectors,
         "breaks": {"pdh": pdh_break[:12], "pwh": pwh_break[:12],
@@ -616,10 +691,11 @@ def build_dashboard():
                     "final": _preopen["final"], "count": len(_preopen["rows"])},
         "mood": _market_mood(stocks, indices),
         "global": get_global_cues(),
+        "tracker": IND.stats(),
+        "ind_ready": sum(1 for r in stocks if (r.get("ind") or {}).get("ready")),
         "levels_ready": bool(_levels["pdh"]),
         "levels_diag": {**_diag, "pdh": len(_levels["pdh"]), "pwh": len(_levels["pwh"]),
                         "orh": len(_levels["orh"])},
         "universe": len(stocks),
         "updated": time.strftime("%H:%M:%S", time.gmtime(time.time() + 19800)),
     }
-
