@@ -651,7 +651,7 @@ def build_dashboard():
                 t1_ = r.get("t1_long") or round(r["ltp"] * 1.01, 2)
                 t2_ = r.get("t2_long") or round(r["ltp"] * 1.02, 2)
                 t3_ = r.get("t3_long") or round(r["ltp"] * 1.035, 2)
-                if sc_ >= 75:
+                if sc_ >= 82:
                     IND.log_signal(r["symbol"], "BUY", r["ltp"], sl_, t1_, t2_, t3_,
                                    min(99, sc_), " + ".join(tags) or "Momentum", "JACKPOT")
             tags2, tech2 = IND.confirmations_short(r)
@@ -661,11 +661,90 @@ def build_dashboard():
                 sl2 = r.get("sl_short") or round(r["ltp"] * 1.01, 2)
                 t1s = r.get("t1_short") or round(r["ltp"] * 0.99, 2)
                 t2s = r.get("t2_short") or round(r["ltp"] * 0.98, 2)
-                if sc2 >= 75:
+                if sc2 >= 82:
                     IND.log_signal(r["symbol"], "SELL", r["ltp"], sl2, t1s, t2s, None,
                                    min(99, sc2), " + ".join(tags2) or "Weak momentum", "DANGER")
     except Exception as e:
         print("signal gen error:", e)
+
+    # ── ZONE SUGGESTIONS (buy zone / sell zone) ──
+    zones = []
+    try:
+        srank2 = {x["sector"]: i + 1 for i, x in enumerate(sectors)}
+        for r in stocks:
+            ind = r.get("ind") or {}
+            px = r.get("ltp") or 0
+            hi = r.get("high") or px
+            lo = r.get("low") or px
+            if not px or hi <= lo:
+                continue
+            rng = hi - lo
+            vwap = ind.get("vwap")
+            atr = ind.get("atr") or rng * 0.25
+            pos = (px - lo) / rng if rng else 0.5      # where in day range
+            rk = srank2.get(r["sector"], 99)
+            strong_sec = rk <= 3
+            weak_sec = rk >= max(1, len(sectors) - 2)
+            vol = r.get("volume") or 0
+
+            # ---- BUY ZONE: uptrend stock pulling back to support ----
+            if r["chg"] >= 0.8 and vol > 5e5:
+                z_lo = round(max(lo, (vwap or lo)) * 0.999, 2)
+                z_hi = round(min(px, max(lo, vwap or lo) * 1.006), 2)
+                if z_hi <= z_lo:
+                    z_lo, z_hi = round(px * 0.994, 2), round(px * 1.001, 2)
+                sl = round(z_lo - 1.2 * atr, 2)
+                t1 = round(z_hi + 1.5 * atr, 2)
+                t2 = round(z_hi + 2.5 * atr, 2)
+                t3 = round(z_hi + 4.0 * atr, 2)
+                score = 50 + min(20, round(r["chg"] * 4))
+                why = []
+                if strong_sec: score += 10; why.append("sector top-3")
+                if vwap and px > vwap: score += 8; why.append("above VWAP")
+                if pos >= 0.7: score += 6; why.append("near day high")
+                if vol > 1e7: score += 6; why.append("heavy volume")
+                if ind.get("rsi") and 55 <= ind["rsi"] <= 72: score += 6; why.append(f"RSI {ind['rsi']}")
+                if ind.get("adx") and ind["adx"] >= 25: score += 5; why.append(f"ADX {ind['adx']}")
+                score = min(99, score)
+                zones.append({
+                    "symbol": r["symbol"], "sector": r["sector"], "side": "BUY",
+                    "ltp": px, "chg": r["chg"], "zone_lo": z_lo, "zone_hi": z_hi,
+                    "sl": sl, "t1": t1, "t2": t2, "t3": t3, "score": score,
+                    "why": ", ".join(why) or "momentum",
+                    "must": score >= 85 and strong_sec and bool(vwap and px > vwap),
+                    "note": "Buy on dip into zone" if px > z_hi else "In zone now",
+                })
+
+            # ---- SELL ZONE: downtrend stock bouncing to resistance ----
+            if r["chg"] <= -0.8 and vol > 5e5:
+                z_hi = round(min(hi, (vwap or hi)) * 1.001, 2)
+                z_lo = round(max(px, min(hi, vwap or hi) * 0.994), 2)
+                if z_hi <= z_lo:
+                    z_lo, z_hi = round(px * 0.999, 2), round(px * 1.006, 2)
+                sl = round(z_hi + 1.2 * atr, 2)
+                t1 = round(z_lo - 1.5 * atr, 2)
+                t2 = round(z_lo - 2.5 * atr, 2)
+                t3 = round(z_lo - 4.0 * atr, 2)
+                score = 50 + min(20, round(abs(r["chg"]) * 4))
+                why = []
+                if weak_sec: score += 10; why.append("weak sector")
+                if vwap and px < vwap: score += 8; why.append("below VWAP")
+                if pos <= 0.3: score += 6; why.append("near day low")
+                if vol > 1e7: score += 6; why.append("heavy selling volume")
+                if ind.get("rsi") and ind["rsi"] <= 45: score += 6; why.append(f"RSI {ind['rsi']}")
+                if ind.get("adx") and ind["adx"] >= 25: score += 5; why.append(f"ADX {ind['adx']}")
+                score = min(99, score)
+                zones.append({
+                    "symbol": r["symbol"], "sector": r["sector"], "side": "SELL",
+                    "ltp": px, "chg": r["chg"], "zone_lo": z_lo, "zone_hi": z_hi,
+                    "sl": sl, "t1": t1, "t2": t2, "t3": t3, "score": score,
+                    "why": ", ".join(why) or "weak momentum",
+                    "must": score >= 85 and weak_sec and bool(vwap and px < vwap),
+                    "note": "Sell on bounce into zone" if px < z_lo else "In zone now",
+                })
+        zones.sort(key=lambda z: (-int(z["must"]), -z["score"]))
+    except Exception as e:
+        print("zone error:", e)
 
     # ── opening-range break lists from own candles ──
     or5, or15 = [], []
@@ -691,6 +770,7 @@ def build_dashboard():
                     "final": _preopen["final"], "count": len(_preopen["rows"])},
         "mood": _market_mood(stocks, indices),
         "global": get_global_cues(),
+        "zones": zones[:14],
         "tracker": IND.stats(),
         "ind_ready": sum(1 for r in stocks if (r.get("ind") or {}).get("ready")),
         "levels_ready": bool(_levels["pdh"]),
