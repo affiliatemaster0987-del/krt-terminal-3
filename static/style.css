@@ -341,3 +341,27 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .tier-s .tier{color:#8fe36b} .tier-g .tier{color:var(--amber)}
 .top-row .lvmini{font-size:.58rem;color:var(--dim)}
 .top-row .btn.mini{padding:3px 9px;font-size:.58rem;margin-left:6px}
+
+/* jackpot suggest zones */
+.zone-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.zone-card{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--faint);
+  border-radius:10px;padding:11px;display:flex;flex-direction:column;gap:7px}
+.zone-card.zb{border-left-color:var(--bull)}
+.zone-card.zs{border-left-color:var(--bear)}
+.zone-card.must{box-shadow:0 0 22px -6px var(--bull-glow);border-color:var(--amber)}
+.z-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.74rem}
+.z-top .sym{font-family:'Archivo';font-weight:900;font-size:1rem}
+.z-top .sec{font-size:.55rem;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.z-score{margin-left:auto;font-family:'Archivo';font-weight:900;font-size:1rem;color:var(--bull)}
+.zs .z-score{color:var(--bear)}
+.z-score small{font-size:.5rem;color:var(--dim);font-weight:400}
+.must-tag{font-size:.55rem;font-weight:800;color:#0d1119;background:var(--amber);
+  border-radius:5px;padding:2px 7px;letter-spacing:.05em}
+.z-band{font-size:.7rem;color:var(--dim);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.z-band b{font-family:'Archivo';font-size:1.05rem;color:var(--cyan);font-weight:900}
+.z-ltp{margin-left:auto;font-size:.62rem}
+.z-lv{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;font-size:.6rem;text-align:center}
+.z-lv span{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:3px 2px}
+.z-lv .s{color:var(--bear)} .z-lv .t{color:var(--bull)}
+.z-foot{display:flex;align-items:center;gap:8px;font-size:.58rem;color:var(--dim);flex-wrap:wrap}
+.z-foot .btn.mini{margin-left:auto;padding:4px 10px;font-size:.6rem}
