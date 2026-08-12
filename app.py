@@ -73,6 +73,24 @@ def api_levels():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/tracker")
+def api_tracker():
+    try:
+        import indicators as IND
+        return jsonify(IND.stats())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/news/debug")
+def api_news_debug():
+    try:
+        from news import news_debug
+        return jsonify(news_debug())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/health")
 def health():
     return {"status": "ok"}
@@ -81,4 +99,3 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
