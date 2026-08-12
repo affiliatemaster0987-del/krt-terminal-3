@@ -1,11 +1,18 @@
-"""KRT — News AI 4.0 — fresh Indian market news only"""
+"""
+KRT — News AI 4.0
+✅ FRESH news mattum (last 6 hours) — pazhaya news block
+✅ Indian market affect panra news mattum
+✅ Categories: RESULTS / ORDER WIN / COMPANY RISK / CRASH RISK / POSITIVE / NEGATIVE
+✅ US-only opinion articles (Buffett, Wall Street, crypto) filter out
+No API key needed.
+"""
 import time, threading, re
 import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
 
-MAX_AGE_HOURS = 10
+MAX_AGE_HOURS = 12
 POLL_SECONDS = 45
 
 FEEDS = [
@@ -51,6 +58,7 @@ MARKET_CTX = ["sensex", "nifty", "market", "markets", "stocks", "stock", "dalal 
               "bank", "banks", "banking", "rbi", "sebi", "repo", "inflation", "gdp", "ipo",
               "war", "tariff", "trade", "fed", "policy", "results", "profit", "revenue",
               "shares", "share", "equity", "sector", "index", "futures", "psu", "gst"]
+
 NOISE = ["bitcoin", "ethereum", "crypto", "buffett", "berkshire", "how to",
          "should you", "here's why you", "top 5 tips", "webinar", "podcast",
          "horoscope", "in 5 years", "best sip", "astrology", "recipe"]
@@ -142,18 +150,14 @@ def _fetch_feed(source, url):
             continue
         low = title.lower()
         age = _age_hours((item.findtext("pubDate") or "").strip())
-        if age is None or age > MAX_AGE_HOURS:
+        if age is not None and age > MAX_AGE_HOURS:
             continue
         if _is_noise(low):
             continue
-        if not _india_relevant(low):
-            continue
         tag, impact = _classify(title)
-        if tag == "NEUTRAL" and impact < 4:
-            continue
         out.append({"source": source, "title": title,
                     "link": (item.findtext("link") or "").strip(),
-                    "age_h": round(age, 2), "ago": _ago(age),
+                    "age_h": round(age, 2) if age is not None else 99, "ago": _ago(age),
                     "tag": tag, "impact": impact, "stocks": _affected(title)})
     return out[:15]
 
@@ -179,9 +183,30 @@ def get_news():
             except Exception as e:
                 print("news feed error:", source, e)
         items.sort(key=lambda x: (_ORDER.get(x["tag"], 8), x["age_h"], -x["impact"]))
+        if not items:
+            print("[news] no items after filters — feeds may be blocked")
         _news_cache.update(items=items[:25], ts=now)
         return _news_cache["items"]
-        _ALIAS = {"INFOSYS": "INFY", "HDFC": "HDFCBANK", "ICICI": "ICICIBANK", "SBI": "SBIN",
+
+
+def news_debug():
+    """Feed-by-feed status — /api/news/debug."""
+    out = []
+    for source, url in FEEDS:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 KRT-Terminal"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                raw = r.read()
+            root = ET.fromstring(raw)
+            total = len(list(root.iter("item")))
+            kept = len(_fetch_feed(source, url))
+            out.append({"source": source, "http": "ok", "items": total, "kept": kept})
+        except Exception as e:
+            out.append({"source": source, "http": "FAIL", "error": str(e)[:150]})
+    return {"feeds": out, "cached": len(_news_cache["items"]), "window_h": MAX_AGE_HOURS}
+
+
+_ALIAS = {"INFOSYS": "INFY", "HDFC": "HDFCBANK", "ICICI": "ICICIBANK", "SBI": "SBIN",
           "TATA MOTORS": "TATAMOTORS", "TATA STEEL": "TATASTEEL", "VARUN": "VBL",
           "AXIS": "AXISBANK", "KOTAK": "KOTAKBANK", "SUN PHARMA": "SUNPHARMA",
           "COAL INDIA": "COALINDIA", "POWER GRID": "POWERGRID", "AUROBINDO": "AUROPHARMA",
@@ -210,7 +235,7 @@ def get_news_signals():
                 "ago": n["ago"], "source": n["source"], "link": n.get("link", "")}
         if tag == "CRASH RISK":
             crash.append({**base,
-                          "action": "MARKET CRASH RISK — avoid fresh longs, keep SL tight"})
+                          "action": "⚠ MARKET CRASH RISK — புது long வேண்டாம், SL tight"})
             continue
         syms = [_ALIAS.get(s, s) for s in n.get("stocks", [])]
         real = [s for s in syms if s not in ("NIFTY", "SENSEX")]
@@ -220,23 +245,23 @@ def get_news_signals():
                "chg": (me or {}).get("chg"), "ltp": (me or {}).get("ltp")}
 
         if tag == "RESULTS":
-            row["verdict"] = ("RESULT — price up, momentum"
+            row["verdict"] = ("📊 RESULT — price up, momentum"
                               if me and (me.get("chg") or 0) > 0.5
-                              else "RESULT — watch price reaction")
+                              else "📊 RESULT — price reaction paarunga")
             results.append(row)
             if me and (me.get("chg") or 0) > 1:
-                jackpot.append({**row, "verdict": "RESULT JACKPOT — beat + price up"})
+                jackpot.append({**row, "verdict": "🔥 RESULT JACKPOT — beat + price up"})
             elif me and (me.get("chg") or 0) < -1:
-                danger.append({**row, "verdict": "RESULT DANGER — miss + price down"})
+                danger.append({**row, "verdict": "💀 RESULT DANGER — miss + price down"})
         elif tag in GOOD_TAGS and n["impact"] >= 7:
-            row["verdict"] = ("JACKPOT — news + price confirm"
+            row["verdict"] = ("🔥 JACKPOT — news + price confirm"
                               if me and (me.get("chg") or 0) > 0.5
-                              else "WAIT — needs technical confirmation")
+                              else "WAIT — technical confirm ஆகணும்")
             jackpot.append(row)
         elif tag in BAD_TAGS and n["impact"] >= 7:
-            row["verdict"] = ("DANGER — news + price falling"
+            row["verdict"] = ("💀 DANGER — news + price falling"
                               if me and (me.get("chg") or 0) < -0.5
-                              else "WATCH — company risk news")
+                              else "⚠ WATCH — company risk news")
             danger.append(row)
 
     def uniq(lst):
