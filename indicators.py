@@ -143,6 +143,54 @@ def _vwap(cs):
     return (pv / tv) if tv else None
 
 
+def _resample(cs, minutes):
+    """1-min candles -> N-min candles."""
+    out, bucket = [], {}
+    step = minutes * 60
+    for c in cs:
+        b = int(c["t"] // step) * step
+        if bucket.get("t") != b:
+            if bucket:
+                out.append(bucket)
+            bucket = {"t": b, "o": c["o"], "h": c["h"], "l": c["l"], "c": c["c"], "v": c["v"]}
+        else:
+            bucket["h"] = max(bucket["h"], c["h"])
+            bucket["l"] = min(bucket["l"], c["l"])
+            bucket["c"] = c["c"]; bucket["v"] = c["v"]
+    if bucket:
+        out.append(bucket)
+    return out
+
+
+def htf_trend(sym):
+    """Higher timeframe alignment: 1m / 5m / 15m trend agree?"""
+    with _lock:
+        cs = list(CANDLES.get(sym, []))
+    if len(cs) < 20:
+        return {"ready": False, "align": 0, "tf": {}}
+    res = {}
+    for name, mins, need in (("m1", 1, 20), ("m5", 5, 6), ("m15", 15, 4)):
+        bars = cs if mins == 1 else _resample(cs, mins)
+        if len(bars) < need:
+            res[name] = None
+            continue
+        cl = [b["c"] for b in bars]
+        fast = _ema(cl, min(9, len(cl) - 1))
+        slow = _ema(cl, min(21, len(cl) - 1)) or (sum(cl) / len(cl))
+        if fast is None or slow is None:
+            res[name] = None
+        else:
+            res[name] = 1 if fast > slow else -1
+    vals = [v for v in res.values() if v is not None]
+    align = 0
+    if vals:
+        if all(v == 1 for v in vals) and len(vals) >= 2:
+            align = 1
+        elif all(v == -1 for v in vals) and len(vals) >= 2:
+            align = -1
+    return {"ready": len(vals) >= 2, "align": align, "tf": res}
+
+
 def opening_range(sym):
     """First 5-min & 15-min high/low from self-built candles (09:15 onward)."""
     with _lock:
@@ -191,6 +239,7 @@ def indicators(sym):
     if pd:
         out["pdh"] = pd["high"]; out["pdl"] = pd["low"]; out["pdc"] = pd["close"]
     out.update(opening_range(sym))
+    out["htf"] = htf_trend(sym)
     return out
 
 
