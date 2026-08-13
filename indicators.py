@@ -201,14 +201,18 @@ def enrich(rows):
         r["ind"] = ind
         atr = ind.get("atr")
         px = r.get("ltp") or 0
-        if atr and px:
-            r["sl_long"] = round(px - 1.5 * atr, 2)
+        if px:
+            day_rng = (ind.get("day_high") or px) - (ind.get("day_low") or px)
+            floor = max(px * 0.005, day_rng * 0.30)      # min 0.5% or 30% of day range
+            atr = max(atr or 0, floor)
+            r["sl_long"] = round(px - 1.2 * atr, 2)
             r["t1_long"] = round(px + 1.5 * atr, 2)
             r["t2_long"] = round(px + 2.5 * atr, 2)
             r["t3_long"] = round(px + 4.0 * atr, 2)
-            r["sl_short"] = round(px + 1.5 * atr, 2)
+            r["sl_short"] = round(px + 1.2 * atr, 2)
             r["t1_short"] = round(px - 1.5 * atr, 2)
             r["t2_short"] = round(px - 2.5 * atr, 2)
+            r["t3_short"] = round(px - 4.0 * atr, 2)
             r["atr_pct"] = round(atr / px * 100, 2)
     return rows
 
@@ -298,8 +302,10 @@ def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="", sour
             if _mins_since(s["ts"], s["date"]) < COOLDOWN_MIN:
                 return None
             break
+    pc = lambda v: round(abs(v - entry) / entry * 100, 2) if (v and entry) else None
     sig = {"id": f"{sym}-{side}-{_ist().strftime('%H%M%S')}", "sym": sym, "side": side,
            "entry": entry, "sl": sl, "t1": t1, "t2": t2, "t3": t3,
+           "sl_pct": pc(sl), "t1_pct": pc(t1), "t2_pct": pc(t2), "t3_pct": pc(t3),
            "score": score, "setup": setup, "source": source,
            "ts": _ist().strftime("%H:%M"), "date": today,
            "status": "LIVE", "t1_at": None, "t2_at": None, "t3_at": None,
