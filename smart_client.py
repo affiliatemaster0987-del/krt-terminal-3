@@ -29,10 +29,10 @@ UNIVERSE = {
     # BANK
     "HDFCBANK": "BANK", "ICICIBANK": "BANK", "AXISBANK": "BANK", "KOTAKBANK": "BANK",
     "INDUSINDBK": "BANK", "FEDERALBNK": "BANK", "IDFCFIRSTB": "BANK", "BANDHANBNK": "BANK",
-    "AUBANK": "BANK", "RBLBANK": "BANK",
+    "AUBANK": "BANK",
     # PSU BANK
     "SBIN": "PSU BANK", "BANKBARODA": "PSU BANK", "PNB": "PSU BANK",
-    "CANBK": "PSU BANK", "UNIONBANK": "PSU BANK", "INDIANB": "PSU BANK",
+    "CANBK": "PSU BANK", "UNIONBANK": "PSU BANK",
     # NBFC / FIN
     "BAJFINANCE": "FINANCE", "BAJAJFINSV": "FINANCE", "CHOLAFIN": "FINANCE",
     "SHRIRAMFIN": "FINANCE", "LICHSGFIN": "FINANCE", "MUTHOOTFIN": "FINANCE",
@@ -41,62 +41,53 @@ UNIVERSE = {
     # AUTO
     "MARUTI": "AUTO", "TATAMOTORS": "AUTO", "M&M": "AUTO", "BAJAJ-AUTO": "AUTO",
     "HEROMOTOCO": "AUTO", "EICHERMOT": "AUTO", "TVSMOTOR": "AUTO", "ASHOKLEY": "AUTO",
-    "MOTHERSON": "AUTO", "BOSCHLTD": "AUTO", "BHARATFORG": "AUTO", "SONACOMS": "AUTO",
-    "EXIDEIND": "AUTO", "BALKRISIND": "AUTO", "MRF": "AUTO", "APOLLOTYRE": "AUTO",
+    "MOTHERSON": "AUTO", "BHARATFORG": "AUTO", "SONACOMS": "AUTO", "BALKRISIND": "AUTO", "APOLLOTYRE": "AUTO",
     # ENERGY / OIL
     "RELIANCE": "ENERGY", "ONGC": "ENERGY", "IOC": "ENERGY", "BPCL": "ENERGY",
-    "HINDPETRO": "ENERGY", "GAIL": "ENERGY", "OIL": "ENERGY", "PETRONET": "ENERGY",
+    "HINDPETRO": "ENERGY", "GAIL": "ENERGY", "PETRONET": "ENERGY",
     # POWER
     "NTPC": "POWER", "POWERGRID": "POWER", "TATAPOWER": "POWER", "ADANIPOWER": "POWER",
-    "ADANIGREEN": "POWER", "NHPC": "POWER", "SJVN": "POWER", "TORNTPOWER": "POWER",
+    "ADANIGREEN": "POWER",
     # METAL
     "TATASTEEL": "METAL", "JSWSTEEL": "METAL", "HINDALCO": "METAL", "VEDL": "METAL",
-    "JINDALSTEL": "METAL", "SAIL": "METAL", "NMDC": "METAL", "NATIONALUM": "METAL",
-    "APLAPOLLO": "METAL", "HINDZINC": "METAL",
+    "JINDALSTEL": "METAL", "SAIL": "METAL", "NMDC": "METAL", "HINDZINC": "METAL",
     # PHARMA
     "SUNPHARMA": "PHARMA", "CIPLA": "PHARMA", "DRREDDY": "PHARMA", "DIVISLAB": "PHARMA",
-    "AUROPHARMA": "PHARMA", "LUPIN": "PHARMA", "ALKEM": "PHARMA", "TORNTPHARM": "PHARMA",
-    "ZYDUSLIFE": "PHARMA", "GLENMARK": "PHARMA", "BIOCON": "PHARMA", "LAURUSLABS": "PHARMA",
-    "MANKIND": "PHARMA", "ABBOTINDIA": "PHARMA",
+    "AUROPHARMA": "PHARMA", "LUPIN": "PHARMA", "TORNTPHARM": "PHARMA",
+    "ZYDUSLIFE": "PHARMA", "BIOCON": "PHARMA",
     # HEALTHCARE
-    "APOLLOHOSP": "HEALTHCARE", "MAXHEALTH": "HEALTHCARE", "FORTIS": "HEALTHCARE",
-    "SYNGENE": "HEALTHCARE",
+    "APOLLOHOSP": "HEALTHCARE", "MAXHEALTH": "HEALTHCARE",
     # FMCG
     "ITC": "FMCG", "HINDUNILVR": "FMCG", "NESTLEIND": "FMCG", "BRITANNIA": "FMCG",
     "DABUR": "FMCG", "MARICO": "FMCG", "GODREJCP": "FMCG", "COLPAL": "FMCG",
-    "TATACONSUM": "FMCG", "VBL": "FMCG", "UBL": "FMCG", "PGHH": "FMCG",
+    "TATACONSUM": "FMCG", "VBL": "FMCG",
     # DEFENCE / PSU
-    "BEL": "DEFENCE", "HAL": "DEFENCE", "BDL": "DEFENCE", "MAZDOCK": "DEFENCE",
-    "COCHINSHIP": "DEFENCE", "GRSE": "DEFENCE", "BHEL": "DEFENCE",
+    "BEL": "DEFENCE", "HAL": "DEFENCE", "BHEL": "DEFENCE",
     # INFRA / CAPITAL GOODS
-    "LT": "INFRA", "SIEMENS": "INFRA", "ABB": "INFRA", "CUMMINSIND": "INFRA",
-    "THERMAX": "INFRA", "POLYCAB": "INFRA", "HAVELLS": "INFRA", "KEI": "INFRA",
+    "LT": "INFRA", "SIEMENS": "INFRA", "ABB": "INFRA", "CUMMINSIND": "INFRA", "POLYCAB": "INFRA", "HAVELLS": "INFRA",
     "RVNL": "INFRA", "IRFC": "INFRA", "IRCTC": "INFRA", "CONCOR": "INFRA",
-    "ADANIPORTS": "INFRA", "GMRAIRPORT": "INFRA", "NBCC": "INFRA", "NCC": "INFRA",
+    "ADANIPORTS": "INFRA", "GMRAIRPORT": "INFRA",
     # CEMENT
     "ULTRACEMCO": "CEMENT", "GRASIM": "CEMENT", "SHREECEM": "CEMENT",
-    "AMBUJACEM": "CEMENT", "ACC": "CEMENT", "DALBHARAT": "CEMENT", "JKCEMENT": "CEMENT",
+    "AMBUJACEM": "CEMENT", "ACC": "CEMENT",
     # REALTY
-    "DLF": "REALTY", "GODREJPROP": "REALTY", "OBEROIRLTY": "REALTY",
-    "PRESTIGE": "REALTY", "LODHA": "REALTY", "PHOENIXLTD": "REALTY",
+    "DLF": "REALTY", "GODREJPROP": "REALTY", "OBEROIRLTY": "REALTY", "LODHA": "REALTY",
     # CONSUMER / RETAIL
     "TITAN": "CONSUMER", "TRENT": "CONSUMER", "DMART": "CONSUMER", "JUBLFOOD": "CONSUMER",
-    "PAGEIND": "CONSUMER", "VOLTAS": "CONSUMER", "BLUESTARCO": "CONSUMER",
-    "DIXON": "CONSUMER", "CROMPTON": "CONSUMER", "WHIRLPOOL": "CONSUMER",
-    "CGCONSUMER": "CONSUMER", "PGEL": "CONSUMER", "KALYANKJIL": "CONSUMER",
+    "PAGEIND": "CONSUMER", "VOLTAS": "CONSUMER",
+    "DIXON": "CONSUMER",
     # CHEMICAL
     "PIDILITIND": "CHEMICAL", "SRF": "CHEMICAL", "UPL": "CHEMICAL", "TATACHEM": "CHEMICAL",
-    "DEEPAKNTR": "CHEMICAL", "AARTIIND": "CHEMICAL", "PIIND": "CHEMICAL",
+    "DEEPAKNTR": "CHEMICAL", "PIIND": "CHEMICAL",
     "ASIANPAINT": "CHEMICAL", "BERGEPAINT": "CHEMICAL",
     # TELECOM / MEDIA
     "BHARTIARTL": "TELECOM", "IDEA": "TELECOM", "INDUSTOWER": "TELECOM",
-    "TATACOMM": "TELECOM", "ZEEL": "MEDIA", "PVRINOX": "MEDIA", "SUNTV": "MEDIA",
     # NEW AGE
     "ZOMATO": "NEW AGE", "SWIGGY": "NEW AGE", "PAYTM": "NEW AGE", "NYKAA": "NEW AGE",
     "POLICYBZR": "NEW AGE", "DELHIVERY": "NEW AGE",
     # DIVERSIFIED
-    "ADANIENT": "DIVERSIFIED", "JSWENERGY": "DIVERSIFIED", "SIEMENSENGY": "DIVERSIFIED",
-    "INDHOTEL": "HOTELS", "IGL": "GAS", "MGL": "GAS", "GUJGASLTD": "GAS",
+    "ADANIENT": "DIVERSIFIED", "JSWENERGY": "DIVERSIFIED",
+    "INDHOTEL": "HOTELS", "IGL": "GAS",
 }
 
 YF = "https://query1.finance.yahoo.com/v8/finance/chart/"
@@ -693,6 +684,7 @@ def build_dashboard():
                 z_hi = round(min(px, max(lo, vwap or lo) * 1.006), 2)
                 if z_hi <= z_lo:
                     z_lo, z_hi = round(px * 0.994, 2), round(px * 1.001, 2)
+                atr = max(atr, px * 0.006, rng * 0.30)
                 sl = round(z_lo - 1.2 * atr, 2)
                 t1 = round(z_hi + 1.5 * atr, 2)
                 t2 = round(z_hi + 2.5 * atr, 2)
@@ -710,6 +702,10 @@ def build_dashboard():
                     "symbol": r["symbol"], "sector": r["sector"], "side": "BUY",
                     "ltp": px, "chg": r["chg"], "zone_lo": z_lo, "zone_hi": z_hi,
                     "sl": sl, "t1": t1, "t2": t2, "t3": t3, "score": score,
+                    "sl_pct": round(abs(sl - px) / px * 100, 2),
+                    "t1_pct": round(abs(t1 - px) / px * 100, 2),
+                    "t2_pct": round(abs(t2 - px) / px * 100, 2),
+                    "t3_pct": round(abs(t3 - px) / px * 100, 2),
                     "why": ", ".join(why) or "momentum",
                     "must": score >= 85 and strong_sec and bool(vwap and px > vwap),
                     "note": "Buy on dip into zone" if px > z_hi else "In zone now",
@@ -721,6 +717,7 @@ def build_dashboard():
                 z_lo = round(max(px, min(hi, vwap or hi) * 0.994), 2)
                 if z_hi <= z_lo:
                     z_lo, z_hi = round(px * 0.999, 2), round(px * 1.006, 2)
+                atr = max(atr, px * 0.006, rng * 0.30)
                 sl = round(z_hi + 1.2 * atr, 2)
                 t1 = round(z_lo - 1.5 * atr, 2)
                 t2 = round(z_lo - 2.5 * atr, 2)
@@ -738,6 +735,10 @@ def build_dashboard():
                     "symbol": r["symbol"], "sector": r["sector"], "side": "SELL",
                     "ltp": px, "chg": r["chg"], "zone_lo": z_lo, "zone_hi": z_hi,
                     "sl": sl, "t1": t1, "t2": t2, "t3": t3, "score": score,
+                    "sl_pct": round(abs(sl - px) / px * 100, 2),
+                    "t1_pct": round(abs(t1 - px) / px * 100, 2),
+                    "t2_pct": round(abs(t2 - px) / px * 100, 2),
+                    "t3_pct": round(abs(t3 - px) / px * 100, 2),
                     "why": ", ".join(why) or "weak momentum",
                     "must": score >= 85 and weak_sec and bool(vwap and px < vwap),
                     "note": "Sell on bounce into zone" if px < z_lo else "In zone now",
@@ -745,6 +746,39 @@ def build_dashboard():
         zones.sort(key=lambda z: (-int(z["must"]), -z["score"]))
     except Exception as e:
         print("zone error:", e)
+
+    # ── CALL OF THE DAY (single best conviction pick + option strikes) ──
+    def _strike_step(p):
+        if p < 200: return 5
+        if p < 500: return 10
+        if p < 1000: return 20
+        if p < 2500: return 50
+        if p < 5000: return 100
+        return 250
+
+    call_day = None
+    try:
+        pool = [z for z in zones if z.get("must")] or zones[:5]
+        if pool:
+            best = max(pool, key=lambda z: z["score"])
+            px = best["ltp"]; step = _strike_step(px)
+            atm = round(px / step) * step
+            if best["side"] == "BUY":
+                strikes = [{"strike": int(atm), "type": "CE", "label": "ATM"},
+                           {"strike": int(atm + step), "type": "CE", "label": "OTM 1"},
+                           {"strike": int(atm + 2 * step), "type": "CE", "label": "OTM 2"}]
+                view = "Bullish — CE side"
+            else:
+                strikes = [{"strike": int(atm), "type": "PE", "label": "ATM"},
+                           {"strike": int(atm - step), "type": "PE", "label": "OTM 1"},
+                           {"strike": int(atm - 2 * step), "type": "PE", "label": "OTM 2"}]
+                view = "Bearish — PE side"
+            call_day = {**best, "view": view, "strikes": strikes, "atm": int(atm),
+                        "step": step,
+                        "plan": ("Enter only when price trades inside the zone. "
+                                 "Book part at T1, trail rest. Exit all if SL breaks.")}
+    except Exception as e:
+        print("call of day error:", e)
 
     # ── opening-range break lists from own candles ──
     or5, or15 = [], []
@@ -771,6 +805,7 @@ def build_dashboard():
         "mood": _market_mood(stocks, indices),
         "global": get_global_cues(),
         "zones": zones[:14],
+        "call_day": call_day,
         "tracker": IND.stats(),
         "ind_ready": sum(1 for r in stocks if (r.get("ind") or {}).get("ready")),
         "levels_ready": bool(_levels["pdh"]),
