@@ -1,4 +1,4 @@
-/* ═══════════ KRT AI 8.0 — LIVE (Angel One + KRT Scanners) ═══════════ */
+/* ═══════════ KRT AI 9.0 — LIVE (Angel One + Option Chain) ═══════════ */
 const CONFIG = { DASHBOARD:"/api/dashboard", NEWS:"/api/news", REFRESH_MS:15000, MARKET_CLOSE:"15:30" };
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n||0).toLocaleString('en-IN');
@@ -81,6 +81,7 @@ function buildJackpots(stocks, brk, sectorRank){
       if(ind.ema9&&ind.ema21&&ind.ema9>ind.ema21){tags.push('EMA 9>21');tech+=8;}
       if(ind.vwap&&r.ltp>ind.vwap){tags.push('Above VWAP');tech+=8;}
       if(ind.adx&&ind.adx>=25){tags.push('ADX '+ind.adx);tech+=8;}
+      if(ind.htf&&ind.htf.align===1){tags.push('HTF aligned');tech+=10;}
       let score = 40 + Math.min(20,Math.round(r.chg*3)) + tags.length*4 + tech;
       if((r.volume||0)>1e7)score+=6;
       score=Math.min(99,score);
@@ -112,6 +113,7 @@ function buildDangers(stocks, brk, sectorRank, total){
       if(ind.ema9&&ind.ema21&&ind.ema9<ind.ema21){tags.push('EMA 9<21');tech+=8;}
       if(ind.vwap&&r.ltp<ind.vwap){tags.push('Below VWAP');tech+=8;}
       if(ind.adx&&ind.adx>=25){tags.push('ADX '+ind.adx);tech+=8;}
+      if(ind.htf&&ind.htf.align===-1){tags.push('HTF aligned');tech+=10;}
       let score=40+Math.min(22,Math.round(Math.abs(r.chg)*3))+tags.length*4+tech;
       score=Math.min(99,score);
       const useATR = r.sl_short!=null;
@@ -356,6 +358,20 @@ $('zoneSend') && ($('zoneSend').onclick=()=>{
     `${z.must?'⭐ ':''}${z.symbol} ${z.side} ${z.zone_lo}–${z.zone_hi} | SL ${z.sl} | T1 ${z.t1} (+${z.t1_pct}%) | ${z.score}/100`).join('\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+/* ---------- session + index bias ---------- */
+function renderSession(sess, ib){
+  if(sess && $('sessPill')){
+    const cls = sess.mult>0?'ok':sess.mult<0?'bad':'nt';
+    $('sessPill').className='sess-pill sp-'+cls;
+    $('sessPill').innerHTML=`⏱ ${sess.phase} <span class="nt2">${sess.note}</span>`;
+  }
+  if(ib && $('idxBiasPill')){
+    const cls = ib.bias==='BULLISH'?'ok':ib.bias==='BEARISH'?'bad':'nt';
+    $('idxBiasPill').className='sess-pill sp-'+cls;
+    $('idxBiasPill').innerHTML=`📊 INDEX ${ib.bias} <span class="nt2">avg ${ib.avg>=0?'+':''}${ib.avg}%</span>`;
+  }
+}
+
 /* ---------- call of the day ---------- */
 let codData=null;
 function renderCOD(c){
@@ -385,11 +401,23 @@ function renderCOD(c){
       <div class="opt-row2">${(c.strikes||[]).map(o=>`
         <span class="opt-chip ${o.type==='CE'?'ce':'pe'}">${c.symbol} ${o.strike} ${o.type}<i>${o.label}</i></span>`).join('')}</div>
     </div>
+    ${c.chain?`<div class="cod-chain">
+      <div class="k">OPTION CHAIN · ${c.chain.expiry} · updated ${c.chain.updated}</div>
+      <div class="chain-grid">
+        <div class="ch-cell"><div class="k">PCR</div><div class="v ${c.chain.pcr>=1?'up':'dn'}">${c.chain.pcr??'—'}</div></div>
+        <div class="ch-cell"><div class="k">MAX PAIN</div><div class="v nt">${c.chain.max_pain??'—'}</div></div>
+        <div class="ch-cell"><div class="k">SUPPORT</div><div class="v up">${c.chain.support??'—'}</div></div>
+        <div class="ch-cell"><div class="k">RESISTANCE</div><div class="v dn">${c.chain.resistance??'—'}</div></div>
+        <div class="ch-cell"><div class="k">WRITERS</div><div class="v ${c.chain.bias==='BULLISH'?'up':c.chain.bias==='BEARISH'?'dn':'nt'}">${c.chain.writer}</div></div>
+        <div class="ch-cell"><div class="k">OI BIAS</div><div class="v ${c.chain.bias==='BULLISH'?'up':c.chain.bias==='BEARISH'?'dn':'nt'}">${c.chain.bias}</div></div>
+      </div>
+      ${c.chain.atm_ce!=null?`<div class="ch-prem">ATM ${c.chain.atm} · CE ₹${c.chain.atm_ce} · PE ₹${c.chain.atm_pe}</div>`:''}
+    </div>`:''}
     <div class="cod-why">Why: ${c.why} · ${c.note}</div>
     <div class="cod-plan">${c.plan}</div>`;
 }
 function codMsg(c){
-  return `🔥 KRT CALL OF THE DAY\n\n${c.symbol} (${c.sector}) — ${c.side}\nScore ${c.score}/100 · ${c.view}\n\n${c.side==='BUY'?'Buy zone':'Sell zone'}: ${c.zone_lo} – ${c.zone_hi}\nLTP: ₹${c.ltp}\n\nSL: ${c.sl} (${c.sl_pct}%)\nT1: ${c.t1} (+${c.t1_pct}%)\nT2: ${c.t2} (+${c.t2_pct}%)\nT3: ${c.t3} (+${c.t3_pct}%)\n\nOPTIONS:\n${(c.strikes||[]).map(o=>`• ${c.symbol} ${o.strike} ${o.type} (${o.label})`).join('\n')}\n\nWhy: ${c.why}\n${c.plan}\n\n⚠ Educational only. Not investment advice.`;
+  return `🔥 KRT CALL OF THE DAY\n\n${c.symbol} (${c.sector}) — ${c.side}\nScore ${c.score}/100 · ${c.view}\n\n${c.side==='BUY'?'Buy zone':'Sell zone'}: ${c.zone_lo} – ${c.zone_hi}\nLTP: ₹${c.ltp}\n\nSL: ${c.sl} (${c.sl_pct}%)\nT1: ${c.t1} (+${c.t1_pct}%)\nT2: ${c.t2} (+${c.t2_pct}%)\nT3: ${c.t3} (+${c.t3_pct}%)\n\nOPTIONS:\n${(c.strikes||[]).map(o=>`• ${c.symbol} ${o.strike} ${o.type} (${o.label})`).join('\n')}${c.chain?`\n\nOI: ${c.chain.writer} · PCR ${c.chain.pcr} · Support ${c.chain.support} · Resistance ${c.chain.resistance}`:''}\n\nWhy: ${c.why}\n${c.plan}\n\n⚠ Educational only. Not investment advice.`;
 }
 $('codSend') && ($('codSend').onclick=()=>{ if(codData) openWA(codMsg(codData)); });
 
@@ -549,6 +577,7 @@ async function refresh(){
     renderMood(d.mood);
     renderTracker(d.tracker, d.ind_ready);
     renderOptions(uniq, rank, sectors.length);
+    renderSession(d.session, d.index_bias);
     renderCOD(d.call_day);
     renderZones(d.zones);
     renderPreopen(d.preopen);
