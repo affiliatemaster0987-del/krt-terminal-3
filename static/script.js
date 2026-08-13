@@ -1,4 +1,4 @@
-/* ═══════════ KRT AI 6.3 — LIVE (Angel One + KRT Scanners) ═══════════ */
+/* ═══════════ KRT AI 7.0 — LIVE (Angel One + KRT Scanners) ═══════════ */
 const CONFIG = { DASHBOARD:"/api/dashboard", NEWS:"/api/news", REFRESH_MS:15000, MARKET_CLOSE:"15:30" };
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n||0).toLocaleString('en-IN');
@@ -318,6 +318,41 @@ function renderChartink(list){
     </div>`;
   }).join('') : `<div class="empty">No scanner calls yet — create a Chartink alert with this webhook URL</div>`;
 }
+
+/* ---------- jackpot suggest zones ---------- */
+let zoneData=[];
+function renderZones(list){
+  zoneData=list||[];
+  if(!$('zoneBox'))return;
+  const must=zoneData.filter(z=>z.must).length;
+  $('zoneTag').textContent=`${zoneData.length} ZONES${must?' · '+must+' MUST TRY':''}`;
+  $('zoneBox').innerHTML = zoneData.length? zoneData.map((z,i)=>`
+    <div class="zone-card ${z.side==='BUY'?'zb':'zs'} ${z.must?'must':''}">
+      <div class="z-top">
+        <b class="sym">${z.symbol}</b><span class="sec">${z.sector||''}</span>
+        <span class="chip ${z.side==='BUY'?'up':'dn'}">${z.side}</span>
+        ${z.must?'<span class="must-tag">⭐ MUST TRY</span>':''}
+        <span class="z-score">${z.score}<small>/100</small></span>
+      </div>
+      <div class="z-band">${z.side==='BUY'?'Buy zone':'Sell zone'}
+        <b>${fmt(z.zone_lo)} – ${fmt(z.zone_hi)}</b>
+        <span class="z-ltp">LTP ₹${fmt(z.ltp)} (${z.chg>=0?'▲':'▼'}${Math.abs(z.chg)}%)</span></div>
+      <div class="z-lv"><span class="s">SL ${z.sl}</span><span class="t">T1 ${z.t1}</span>
+        <span class="t">T2 ${z.t2}</span><span class="t">T3 ${z.t3}</span></div>
+      <div class="z-foot"><span>${z.note} · ${z.why}</span>
+        <button class="btn wa mini" onclick="waZone(${i})">🟢 WA</button></div>
+    </div>`).join('') : `<div class="empty">No clean zones right now — zones appear when trend, sector and VWAP line up</div>`;
+}
+function zMsg(z){
+  return `${z.side==='BUY'?'🎯 KRT BUY ZONE':'🎯 KRT SELL ZONE'}${z.must?' ⭐ MUST TRY':''}\n\n${z.symbol} (${z.sector})\nLTP ₹${fmt(z.ltp)} (${z.chg>=0?'+':''}${z.chg}%)\n\n${z.side==='BUY'?'Buy zone':'Sell zone'}: ${z.zone_lo} – ${z.zone_hi}\nSL: ${z.sl}\nT1: ${z.t1}\nT2: ${z.t2}\nT3: ${z.t3}\n\nScore: ${z.score}/100\nWhy: ${z.why}\n${z.note}\n\n⚠ Educational only. Not investment advice.`;
+}
+function waZone(i){ if(zoneData[i]) openWA(zMsg(zoneData[i])); }
+$('zoneSend') && ($('zoneSend').onclick=()=>{
+  if(!zoneData.length)return;
+  openWA('🎯 KRT JACKPOT SUGGEST — ZONES\n\n'+zoneData.slice(0,8).map(z=>
+    `${z.must?'⭐ ':''}${z.symbol} ${z.side} ${z.zone_lo}–${z.zone_hi} | SL ${z.sl} | T ${z.t1}/${z.t2} | ${z.score}/100`).join('\n')+
+    '\n\n⚠ Educational only. Not investment advice.');
+});
 /* ---------- pre-open gap ---------- */
 let gapUpSet=new Set(), gapDownSet=new Set(), preopenData={up:[],down:[]};
 function renderPreopen(po){
@@ -475,6 +510,7 @@ async function refresh(){
     renderMood(d.mood);
     renderTracker(d.tracker, d.ind_ready);
     renderOptions(uniq, rank, sectors.length);
+    renderZones(d.zones);
     renderPreopen(d.preopen);
     stockRows(d.gainers||[],'gainT');
     stockRows(d.losers||[],'loseT');
