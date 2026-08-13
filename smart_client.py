@@ -11,6 +11,7 @@ Environment variables (Render → Environment):
 import os, time, math, random, threading, json
 import urllib.request
 import indicators as IND
+import option_chain as OC
 from datetime import datetime, timedelta
 
 # ───────────────────────── INDICES (fixed tokens) ─────────────────────────
@@ -507,6 +508,26 @@ def _update_preopen(stocks):
         snap("open", True)
 
 
+def _session_quality():
+    """Time-of-day quality: whipsaw / good / dead / closing."""
+    n = _ist_now(); m = n.hour * 60 + n.minute
+    if m < 555:   return {"phase": "PRE", "mult": 0, "note": "Pre-open — no signals"}
+    if m < 570:   return {"phase": "OPENING WHIPSAW", "mult": -8, "note": "9:15-9:30 is noisy — avoid fresh entries"}
+    if m < 690:   return {"phase": "PRIME", "mult": 6, "note": "9:30-11:30 — best trending window"}
+    if m < 810:   return {"phase": "DEAD ZONE", "mult": -6, "note": "11:30-1:30 — low momentum, fewer trades"}
+    if m < 915:   return {"phase": "AFTERNOON", "mult": 4, "note": "1:30-3:15 — second momentum window"}
+    return {"phase": "CLOSING", "mult": -10, "note": "After 3:15 — square off, no fresh entries"}
+
+
+def _index_bias(indices):
+    nf = next((i["chg"] for i in indices if "NIFTY 50" in i["symbol"]), 0)
+    bn = next((i["chg"] for i in indices if "BANKNIFTY" in i["symbol"]), 0)
+    avg = (nf + bn) / 2
+    if avg >= 0.3:   return {"bias": "BULLISH", "avg": round(avg, 2), "long": 6, "short": -8}
+    if avg <= -0.3:  return {"bias": "BEARISH", "avg": round(avg, 2), "long": -8, "short": 6}
+    return {"bias": "FLAT", "avg": round(avg, 2), "long": 0, "short": 0}
+
+
 def _market_mood(stocks, indices):
     """FEAR / HAPPY / CONFUSED / GREED — breadth + VIX + index move."""
     if not stocks:
@@ -629,32 +650,55 @@ def build_dashboard():
                "below_vwap": round((1 - above_v / with_v) * 100, 1) if with_v else None,
                "bias": "Bullish" if adv > dec * 1.3 else "Bearish" if dec > adv * 1.3 else "Neutral"}
 
+    # ── session + index filters ──
+    sess = _session_quality()
+    ibias = _index_bias(indices)
+
     # ── server-side signal generation (tracked even if browser closed) ──
     try:
         srank = {x["sector"]: i + 1 for i, x in enumerate(sectors)}
-        for r in stocks:
+        made = 0
+        DAILY_CAP = 40
+        if sess["mult"] == 0 or IND.stats()["today"]["total"] >= DAILY_CAP:
+            stocks_iter = []
+        else:
+            stocks_iter = stocks
+        for r in stocks_iter:
             ind = r.get("ind") or {}
+            htf = (ind.get("htf") or {})
             tags, tech = IND.confirmations(r)
             if r["chg"] >= 1 and (r.get("volume") or 0) > 3e5:
                 vol_b = 6 if (r.get("volume") or 0) > 1e7 else 0
-                sc_ = 52 + min(24, round(r["chg"] * 5)) + tech + vol_b + (8 if srank.get(r["sector"], 99) <= 3 else 0)
+                htf_b = 10 if htf.get("align") == 1 else (-12 if htf.get("align") == -1 else 0)
+                if htf.get("align") == 1:
+                    tags.append("HTF aligned")
+                sc_ = (52 + min(24, round(r["chg"] * 5)) + tech + vol_b + htf_b
+                       + sess["mult"] + ibias["long"]
+                       + (8 if srank.get(r["sector"], 99) <= 3 else 0))
                 sl_ = r.get("sl_long") or round(r["ltp"] * 0.99, 2)
                 t1_ = r.get("t1_long") or round(r["ltp"] * 1.01, 2)
                 t2_ = r.get("t2_long") or round(r["ltp"] * 1.02, 2)
                 t3_ = r.get("t3_long") or round(r["ltp"] * 1.035, 2)
                 if sc_ >= 82:
-                    IND.log_signal(r["symbol"], "BUY", r["ltp"], sl_, t1_, t2_, t3_,
-                                   min(99, sc_), " + ".join(tags) or "Momentum", "JACKPOT")
+                    if IND.log_signal(r["symbol"], "BUY", r["ltp"], sl_, t1_, t2_, t3_,
+                                      min(99, sc_), " + ".join(tags) or "Momentum", "JACKPOT"):
+                        made += 1
             tags2, tech2 = IND.confirmations_short(r)
             if r["chg"] <= -1:
                 vol_b2 = 6 if (r.get("volume") or 0) > 1e7 else 0
-                sc2 = 52 + min(24, round(abs(r["chg"]) * 5)) + tech2 + vol_b2 + (8 if srank.get(r["sector"], 99) >= len(sectors) - 2 else 0)
+                htf_b2 = 10 if htf.get("align") == -1 else (-12 if htf.get("align") == 1 else 0)
+                if htf.get("align") == -1:
+                    tags2.append("HTF aligned")
+                sc2 = (52 + min(24, round(abs(r["chg"]) * 5)) + tech2 + vol_b2 + htf_b2
+                       + sess["mult"] + ibias["short"]
+                       + (8 if srank.get(r["sector"], 99) >= len(sectors) - 2 else 0))
                 sl2 = r.get("sl_short") or round(r["ltp"] * 1.01, 2)
                 t1s = r.get("t1_short") or round(r["ltp"] * 0.99, 2)
                 t2s = r.get("t2_short") or round(r["ltp"] * 0.98, 2)
                 if sc2 >= 82:
-                    IND.log_signal(r["symbol"], "SELL", r["ltp"], sl2, t1s, t2s, None,
-                                   min(99, sc2), " + ".join(tags2) or "Weak momentum", "DANGER")
+                    if IND.log_signal(r["symbol"], "SELL", r["ltp"], sl2, t1s, t2s, None,
+                                      min(99, sc2), " + ".join(tags2) or "Weak momentum", "DANGER"):
+                        made += 1
     except Exception as e:
         print("signal gen error:", e)
 
@@ -697,7 +741,11 @@ def build_dashboard():
                 if vol > 1e7: score += 6; why.append("heavy volume")
                 if ind.get("rsi") and 55 <= ind["rsi"] <= 72: score += 6; why.append(f"RSI {ind['rsi']}")
                 if ind.get("adx") and ind["adx"] >= 25: score += 5; why.append(f"ADX {ind['adx']}")
-                score = min(99, score)
+                _h = (ind.get("htf") or {}).get("align")
+                if _h == 1: score += 10; why.append("HTF aligned")
+                elif _h == -1: score -= 12
+                score += sess["mult"] + ibias["long"]
+                score = min(99, max(20, score))
                 zones.append({
                     "symbol": r["symbol"], "sector": r["sector"], "side": "BUY",
                     "ltp": px, "chg": r["chg"], "zone_lo": z_lo, "zone_hi": z_hi,
@@ -730,7 +778,11 @@ def build_dashboard():
                 if vol > 1e7: score += 6; why.append("heavy selling volume")
                 if ind.get("rsi") and ind["rsi"] <= 45: score += 6; why.append(f"RSI {ind['rsi']}")
                 if ind.get("adx") and ind["adx"] >= 25: score += 5; why.append(f"ADX {ind['adx']}")
-                score = min(99, score)
+                _h = (ind.get("htf") or {}).get("align")
+                if _h == -1: score += 10; why.append("HTF aligned")
+                elif _h == 1: score -= 12
+                score += sess["mult"] + ibias["short"]
+                score = min(99, max(20, score))
                 zones.append({
                     "symbol": r["symbol"], "sector": r["sector"], "side": "SELL",
                     "ltp": px, "chg": r["chg"], "zone_lo": z_lo, "zone_hi": z_hi,
@@ -743,6 +795,18 @@ def build_dashboard():
                     "must": score >= 85 and weak_sec and bool(vwap and px < vwap),
                     "note": "Sell on bounce into zone" if px < z_lo else "In zone now",
                 })
+        zones.sort(key=lambda z: (-int(z["must"]), -z["score"]))
+        for z in zones[:6]:                      # only top zones -> API friendly
+            try:
+                d_, tag_, ch_ = OC.confirm(z["symbol"], z["ltp"], z["side"])
+                if tag_:
+                    z["score"] = min(99, max(20, z["score"] + d_))
+                    z["why"] += " · " + tag_
+                    z["chain"] = ch_
+                    if d_ < 0:
+                        z["must"] = False
+            except Exception:
+                pass
         zones.sort(key=lambda z: (-int(z["must"]), -z["score"]))
     except Exception as e:
         print("zone error:", e)
@@ -773,8 +837,12 @@ def build_dashboard():
                            {"strike": int(atm - step), "type": "PE", "label": "OTM 1"},
                            {"strike": int(atm - 2 * step), "type": "PE", "label": "OTM 2"}]
                 view = "Bearish — PE side"
+            oc_delta, oc_tag, chain = OC.confirm(best["symbol"], px, best["side"])
+            best = {**best, "score": min(99, max(20, best["score"] + oc_delta))}
+            if oc_tag:
+                best["why"] = best["why"] + " · " + oc_tag
             call_day = {**best, "view": view, "strikes": strikes, "atm": int(atm),
-                        "step": step,
+                        "step": step, "chain": chain,
                         "plan": ("Enter only when price trades inside the zone. "
                                  "Book part at T1, trail rest. Exit all if SL breaks.")}
     except Exception as e:
@@ -804,6 +872,8 @@ def build_dashboard():
                     "final": _preopen["final"], "count": len(_preopen["rows"])},
         "mood": _market_mood(stocks, indices),
         "global": get_global_cues(),
+        "session": sess,
+        "index_bias": ibias,
         "zones": zones[:14],
         "call_day": call_day,
         "tracker": IND.stats(),
