@@ -365,3 +365,30 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .z-lv .s{color:var(--bear)} .z-lv .t{color:var(--bull)}
 .z-foot{display:flex;align-items:center;gap:8px;font-size:.58rem;color:var(--dim);flex-wrap:wrap}
 .z-foot .btn.mini{margin-left:auto;padding:4px 10px;font-size:.6rem}
+
+/* call of the day */
+.card.cod{background:linear-gradient(135deg,rgba(245,184,64,.10),var(--panel) 45%,rgba(22,214,122,.07));
+  border-color:rgba(245,184,64,.45);box-shadow:0 0 30px -10px rgba(245,184,64,.4)}
+.cod-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.cod-sym{font-family:'Archivo';font-weight:900;font-size:1.5rem;letter-spacing:.03em}
+.cod-view{font-size:.66rem;color:var(--amber);font-weight:700}
+.cod-score{margin-left:auto;font-family:'Archivo';font-weight:900;font-size:1.5rem;color:var(--amber)}
+.cod-score small{font-size:.55rem;color:var(--dim);font-weight:400}
+.cod-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.cod-cell{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px;text-align:center}
+.cod-cell .k{font-size:.54rem;color:var(--dim);letter-spacing:.07em}
+.cod-cell .v{font-family:'Archivo';font-weight:900;font-size:1rem;margin-top:3px}
+.cod-cell .v.cy{color:var(--cyan);font-size:.92rem}
+.cod-cell .v small{font-size:.58rem;font-weight:400}
+.cod-opt{margin-top:11px;border-top:1px dashed var(--line);padding-top:9px}
+.cod-opt .k{font-size:.56rem;color:var(--dim);letter-spacing:.07em;margin-bottom:6px}
+.opt-row2{display:flex;gap:7px;flex-wrap:wrap}
+.opt-chip{font-family:'Archivo';font-weight:800;font-size:.8rem;padding:6px 12px;border-radius:8px;
+  border:1px solid var(--line);display:flex;align-items:center;gap:7px}
+.opt-chip i{font-style:normal;font-size:.52rem;font-weight:400;color:var(--dim)}
+.opt-chip.ce{color:var(--bull);border-color:rgba(22,214,122,.45);background:var(--bull-glow)}
+.opt-chip.pe{color:var(--bear);border-color:rgba(255,77,94,.45);background:var(--bear-glow)}
+.cod-why{font-size:.64rem;color:var(--dim);margin-top:9px}
+.cod-plan{font-size:.64rem;color:var(--amber);margin-top:4px}
+.z-lv i,.sr-lv i{font-style:normal;font-size:.52rem;color:var(--dim);display:block}
+.sr-lv i{display:inline;margin-left:3px}
