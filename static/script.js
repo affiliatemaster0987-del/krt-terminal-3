@@ -1,4 +1,4 @@
-/* ═══════════ KRT AI 7.0 — LIVE (Angel One + KRT Scanners) ═══════════ */
+/* ═══════════ KRT AI 8.0 — LIVE (Angel One + KRT Scanners) ═══════════ */
 const CONFIG = { DASHBOARD:"/api/dashboard", NEWS:"/api/news", REFRESH_MS:15000, MARKET_CLOSE:"15:30" };
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n||0).toLocaleString('en-IN');
@@ -81,7 +81,6 @@ function buildJackpots(stocks, brk, sectorRank){
       if(ind.ema9&&ind.ema21&&ind.ema9>ind.ema21){tags.push('EMA 9>21');tech+=8;}
       if(ind.vwap&&r.ltp>ind.vwap){tags.push('Above VWAP');tech+=8;}
       if(ind.adx&&ind.adx>=25){tags.push('ADX '+ind.adx);tech+=8;}
-      if(ind.pdh&&r.ltp>ind.pdh){tags.push('PDH Break');tech+=10;}
       let score = 40 + Math.min(20,Math.round(r.chg*3)) + tags.length*4 + tech;
       if((r.volume||0)>1e7)score+=6;
       score=Math.min(99,score);
@@ -89,10 +88,10 @@ function buildJackpots(stocks, brk, sectorRank){
       return {...r, tags, score, ind, atrMode:useATR,
         setup: tags.length?tags.join(' + '):'Momentum',
         e:rnd(r.ltp),
-        sl: useATR? r.sl_long : rnd(Math.max(r.low||r.ltp*0.99, r.ltp*0.99)),
-        t1: useATR? r.t1_long : rnd(r.ltp*1.01),
-        t2: useATR? r.t2_long : rnd(r.ltp*1.02),
-        t3: useATR? r.t3_long : rnd(r.ltp*1.035)};
+        sl: useATR? r.sl_long : rnd(r.ltp*0.994),
+        t1: useATR? r.t1_long : rnd(r.ltp*1.008),
+        t2: useATR? r.t2_long : rnd(r.ltp*1.014),
+        t3: useATR? r.t3_long : rnd(r.ltp*1.022)};
     })
     .filter(x=>x.score>=70 && x.tags.length>=1)
     .sort((a,b)=>b.score-a.score).slice(0,12);
@@ -113,23 +112,22 @@ function buildDangers(stocks, brk, sectorRank, total){
       if(ind.ema9&&ind.ema21&&ind.ema9<ind.ema21){tags.push('EMA 9<21');tech+=8;}
       if(ind.vwap&&r.ltp<ind.vwap){tags.push('Below VWAP');tech+=8;}
       if(ind.adx&&ind.adx>=25){tags.push('ADX '+ind.adx);tech+=8;}
-      if(ind.pdl&&r.ltp<ind.pdl){tags.push('PDL Break');tech+=10;}
       let score=40+Math.min(22,Math.round(Math.abs(r.chg)*3))+tags.length*4+tech;
       score=Math.min(99,score);
       const useATR = r.sl_short!=null;
       return {...r, tags, score, ind, atrMode:useATR,
         setup: tags.length?tags.join(' + '):'Weak momentum',
         e:rnd(r.ltp),
-        sl: useATR? r.sl_short : rnd(r.ltp*1.01),
-        t1: useATR? r.t1_short : rnd(r.ltp*0.99),
-        t2: useATR? r.t2_short : rnd(r.ltp*0.98)};
+        sl: useATR? r.sl_short : rnd(r.ltp*1.006),
+        t1: useATR? r.t1_short : rnd(r.ltp*0.992),
+        t2: useATR? r.t2_short : rnd(r.ltp*0.986)};
     })
     .sort((a,b)=>b.score-a.score).slice(0,12);
   renderDangers();
 }
 function renderJackpots(){
   $('jpTag').textContent=jackpots.length+' CALLS';
-  if(!jackpots.length){ $('jackpotList').innerHTML=`<div class="empty">No strong jackpot setup yet — waiting for momentum + breakout confirmation</div>`; return; }
+  if(!jackpots.length){ $('jackpotList').innerHTML=`<div class="empty">No strong jackpot setup yet — waiting for momentum and breakout confirmation</div>`; return; }
   $('jackpotList').innerHTML=jackpots.map((j,i)=>`
     <div class="sig-card bull">
       <div class="sig-top"><b class="sym">${j.symbol}</b>
@@ -137,15 +135,17 @@ function renderJackpots(){
         <span class="up">₹${fmt(j.ltp)} ▲${j.chg}%</span>
         <span class="sc">${j.score}<small>/100</small></span></div>
       <div class="sig-tags">${j.tags.map(t=>`<span class="t-chip">✅ ${t}</span>`).join('')||'<span class="t-chip dim">Momentum</span>'}</div>
-      <div class="sig-lv"><span class="e">E ${j.e}</span><span class="s">SL ${j.sl}</span>
-        <span class="t">T1 ${j.t1}</span><span class="t">T2 ${j.t2}</span><span class="t">T3 ${j.t3}</span></div>
-      <div class="sig-foot"><span>Vol ${volFmt(j.volume)} · H ${fmt(j.high)} / L ${fmt(j.low)}${j.atrMode?' · <b class="atrb">ATR levels</b>':' · fixed % levels'}</span>
+      <div class="sig-lv"><span class="e">E ${j.e}</span><span class="s">SL ${j.sl}<i>${((j.e-j.sl)/j.e*100).toFixed(2)}%</i></span>
+        <span class="t">T1 ${j.t1}<i>+${((j.t1-j.e)/j.e*100).toFixed(2)}%</i></span>
+        <span class="t">T2 ${j.t2}<i>+${((j.t2-j.e)/j.e*100).toFixed(2)}%</i></span>
+        <span class="t">T3 ${j.t3}<i>+${((j.t3-j.e)/j.e*100).toFixed(2)}%</i></span></div>
+      <div class="sig-foot"><span>Vol ${volFmt(j.volume)} · H ${fmt(j.high)} / L ${fmt(j.low)}</span>
         <button class="btn wa mini" onclick="waJP(${i})">🟢 WA</button></div>
     </div>`).join('');
 }
 function renderDangers(){
   $('dgTag').textContent=dangers.length+' CALLS';
-  if(!dangers.length){ $('dangerList').innerHTML=`<div class="empty">No danger setups — market stable 👍</div>`; return; }
+  if(!dangers.length){ $('dangerList').innerHTML=`<div class="empty">No danger setups — market stable</div>`; return; }
   $('dangerList').innerHTML=dangers.map((d,i)=>`
     <div class="sig-card bear">
       <div class="sig-top"><b class="sym">${d.symbol}</b>
@@ -153,9 +153,10 @@ function renderDangers(){
         <span class="dn">₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}%</span>
         <span class="sc dnsc">${d.score}<small>/100</small></span></div>
       <div class="sig-tags">${d.tags.map(t=>`<span class="t-chip bad">⚠ ${t}</span>`).join('')||'<span class="t-chip dim">Weak</span>'}</div>
-      <div class="sig-lv"><span class="e">E ${d.e}</span><span class="s">SL ${d.sl}</span>
-        <span class="t">T1 ${d.t1}</span><span class="t">T2 ${d.t2}</span></div>
-      <div class="sig-foot"><span>Vol ${volFmt(d.volume)} · H ${fmt(d.high)} / L ${fmt(d.low)}${d.atrMode?' · <b class="atrb">ATR levels</b>':' · fixed % levels'}</span>
+      <div class="sig-lv"><span class="e">E ${d.e}</span><span class="s">SL ${d.sl}<i>${((d.sl-d.e)/d.e*100).toFixed(2)}%</i></span>
+        <span class="t">T1 ${d.t1}<i>+${((d.e-d.t1)/d.e*100).toFixed(2)}%</i></span>
+        <span class="t">T2 ${d.t2}<i>+${((d.e-d.t2)/d.e*100).toFixed(2)}%</i></span></div>
+      <div class="sig-foot"><span>Vol ${volFmt(d.volume)} · H ${fmt(d.high)} / L ${fmt(d.low)}</span>
         <button class="btn wa mini" onclick="waDG(${i})">🟢 WA</button></div>
     </div>`).join('');
 }
@@ -175,7 +176,7 @@ function accBox(a,label){
   </div>`;
 }
 function sigRow(s){
-  const t=(x,at)=>x? `<span class="tg ${at?'hit':''}">${at?'✅':'○'} ${x}${at?' '+at:''}</span>`:'';
+  const t=(x,at,pc)=>x? `<span class="tg ${at?'hit':''}">${at?'✅':'○'} ${x}${pc?` <i>+${pc}%</i>`:''}${at?' '+at:''}</span>`:'';
   return `<div class="sig-row ${STCLS[s.status]||''}">
     <div class="sr-top"><b>${s.sym}</b>
       <span class="chip ${s.side==='BUY'?'up':'dn'}">${s.side}</span>
@@ -183,7 +184,7 @@ function sigRow(s){
       ${s.score?`<span class="sc2">${s.score}/100</span>`:''}
       <span class="stt">${s.status}</span>
       ${s.pnl_pct!=null?`<span class="${s.pnl_pct>=0?'up':'dn'}">${s.pnl_pct>=0?'+':''}${s.pnl_pct}%</span>`:''}</div>
-    <div class="sr-lv">E ${s.entry} · SL ${s.sl} ${t('T1 '+s.t1,s.t1_at)} ${t('T2 '+s.t2,s.t2_at)} ${s.t3?t('T3 '+s.t3,s.t3_at):''}</div>
+    <div class="sr-lv">E ${s.entry} · SL ${s.sl}${s.sl_pct?` <i>-${s.sl_pct}%</i>`:''} ${t('T1 '+s.t1,s.t1_at,s.t1_pct)} ${t('T2 '+s.t2,s.t2_at,s.t2_pct)} ${s.t3?t('T3 '+s.t3,s.t3_at,s.t3_pct):''}</div>
     ${s.setup?`<div class="sr-why">${s.setup}</div>`:''}</div>`;
 }
 function renderTracker(t, indReady){
@@ -223,7 +224,7 @@ function renderTop(){
       <span class="chip ${s.side==='BUY'?'up':'dn'}">${s.side}</span>
       <span class="tier">${tierName(s.score)}</span>
       <span class="tm">${s.ts}</span>
-      <span class="lvmini">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}</span>
+      <span class="lvmini">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}${s.t1_pct?' (+'+s.t1_pct+'%)':''}</span>
       <span class="sc2">${s.score}</span>
       <span class="stt">${s.status}</span>
       ${s.pnl_pct!=null?`<span class="${s.pnl_pct>=0?'up':'dn'}">${s.pnl_pct>=0?'+':''}${s.pnl_pct}%</span>`:''}
@@ -233,7 +234,7 @@ function renderTop(){
 }
 function waTop(sym){
   const s=(window.__top||[]).find(x=>x.sym===sym); if(!s)return;
-  openWA(`${s.side==='BUY'?'🚀':'⚠'} KRT AI ${s.side} ALERT\n\n${s.sym}  [${tierName(s.score)} ${s.score}/100]\n\nEntry: ₹${s.entry}\nSL: ₹${s.sl}\nT1: ₹${s.t1}\nT2: ₹${s.t2}${s.t3?`\nT3: ₹${s.t3}`:''}\n\nReason: ${s.setup||'-'}\nTime: ${s.ts}\nStatus: ${s.status}\n\n⚠ Educational only. Not investment advice.`);
+  openWA(`${s.side==='BUY'?'🚀':'⚠'} KRT AI ${s.side} ALERT\n\n${s.sym}  [${tierName(s.score)} ${s.score}/100]\n\nEntry: ₹${s.entry}\nSL: ₹${s.sl}${s.sl_pct?` (${s.sl_pct}%)`:''}\nT1: ₹${s.t1}${s.t1_pct?` (+${s.t1_pct}%)`:''}\nT2: ₹${s.t2}${s.t2_pct?` (+${s.t2_pct}%)`:''}${s.t3?`\nT3: ₹${s.t3}${s.t3_pct?` (+${s.t3_pct}%)`:''}`:''}\n\nReason: ${s.setup||'-'}\nTime: ${s.ts}\nStatus: ${s.status}\n\n⚠ Educational only. Not investment advice.`);
 }
 function setTier(t){ TIER=t; store.set('tier',t); renderTop(); }
 
@@ -337,22 +338,61 @@ function renderZones(list){
       <div class="z-band">${z.side==='BUY'?'Buy zone':'Sell zone'}
         <b>${fmt(z.zone_lo)} – ${fmt(z.zone_hi)}</b>
         <span class="z-ltp">LTP ₹${fmt(z.ltp)} (${z.chg>=0?'▲':'▼'}${Math.abs(z.chg)}%)</span></div>
-      <div class="z-lv"><span class="s">SL ${z.sl}</span><span class="t">T1 ${z.t1}</span>
-        <span class="t">T2 ${z.t2}</span><span class="t">T3 ${z.t3}</span></div>
+      <div class="z-lv"><span class="s">SL ${z.sl}<i>${z.sl_pct!=null?'-'+z.sl_pct+'%':''}</i></span>
+        <span class="t">T1 ${z.t1}<i>${z.t1_pct!=null?'+'+z.t1_pct+'%':''}</i></span>
+        <span class="t">T2 ${z.t2}<i>${z.t2_pct!=null?'+'+z.t2_pct+'%':''}</i></span>
+        <span class="t">T3 ${z.t3}<i>${z.t3_pct!=null?'+'+z.t3_pct+'%':''}</i></span></div>
       <div class="z-foot"><span>${z.note} · ${z.why}</span>
         <button class="btn wa mini" onclick="waZone(${i})">🟢 WA</button></div>
     </div>`).join('') : `<div class="empty">No clean zones right now — zones appear when trend, sector and VWAP line up</div>`;
 }
 function zMsg(z){
-  return `${z.side==='BUY'?'🎯 KRT BUY ZONE':'🎯 KRT SELL ZONE'}${z.must?' ⭐ MUST TRY':''}\n\n${z.symbol} (${z.sector})\nLTP ₹${fmt(z.ltp)} (${z.chg>=0?'+':''}${z.chg}%)\n\n${z.side==='BUY'?'Buy zone':'Sell zone'}: ${z.zone_lo} – ${z.zone_hi}\nSL: ${z.sl}\nT1: ${z.t1}\nT2: ${z.t2}\nT3: ${z.t3}\n\nScore: ${z.score}/100\nWhy: ${z.why}\n${z.note}\n\n⚠ Educational only. Not investment advice.`;
+  return `${z.side==='BUY'?'🎯 KRT BUY ZONE':'🎯 KRT SELL ZONE'}${z.must?' ⭐ MUST TRY':''}\n\n${z.symbol} (${z.sector})\nLTP ₹${fmt(z.ltp)} (${z.chg>=0?'+':''}${z.chg}%)\n\n${z.side==='BUY'?'Buy zone':'Sell zone'}: ${z.zone_lo} – ${z.zone_hi}\nSL: ${z.sl} (${z.sl_pct}%)\nT1: ${z.t1} (+${z.t1_pct}%)\nT2: ${z.t2} (+${z.t2_pct}%)\nT3: ${z.t3} (+${z.t3_pct}%)\n\nScore: ${z.score}/100\nWhy: ${z.why}\n${z.note}\n\n⚠ Educational only. Not investment advice.`;
 }
 function waZone(i){ if(zoneData[i]) openWA(zMsg(zoneData[i])); }
 $('zoneSend') && ($('zoneSend').onclick=()=>{
   if(!zoneData.length)return;
   openWA('🎯 KRT JACKPOT SUGGEST — ZONES\n\n'+zoneData.slice(0,8).map(z=>
-    `${z.must?'⭐ ':''}${z.symbol} ${z.side} ${z.zone_lo}–${z.zone_hi} | SL ${z.sl} | T ${z.t1}/${z.t2} | ${z.score}/100`).join('\n')+
+    `${z.must?'⭐ ':''}${z.symbol} ${z.side} ${z.zone_lo}–${z.zone_hi} | SL ${z.sl} | T1 ${z.t1} (+${z.t1_pct}%) | ${z.score}/100`).join('\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+/* ---------- call of the day ---------- */
+let codData=null;
+function renderCOD(c){
+  codData=c;
+  if(!$('codBox'))return;
+  if(!c){ $('codTag').textContent='WAITING';
+    $('codBox').innerHTML=`<div class="empty">Waiting for a high-conviction setup — appears when trend, sector and VWAP all align</div>`; return; }
+  $('codTag').textContent=`${c.symbol} · ${c.score}/100`;
+  $('codBox').innerHTML=`
+    <div class="cod-head">
+      <b class="cod-sym">${c.symbol}</b><span class="sec">${c.sector||''}</span>
+      <span class="chip ${c.side==='BUY'?'up':'dn'}">${c.side}</span>
+      <span class="cod-view">${c.view}</span>
+      <span class="cod-score">${c.score}<small>/100</small></span>
+    </div>
+    <div class="cod-grid">
+      <div class="cod-cell"><div class="k">${c.side==='BUY'?'BUY ZONE':'SELL ZONE'}</div>
+        <div class="v cy">${fmt(c.zone_lo)} – ${fmt(c.zone_hi)}</div></div>
+      <div class="cod-cell"><div class="k">LTP</div><div class="v">₹${fmt(c.ltp)} <small class="${c.chg>=0?'up':'dn'}">${c.chg>=0?'▲':'▼'}${Math.abs(c.chg)}%</small></div></div>
+      <div class="cod-cell"><div class="k">STOP LOSS</div><div class="v dn">${fmt(c.sl)} <small>${c.sl_pct}%</small></div></div>
+      <div class="cod-cell"><div class="k">TARGET 1</div><div class="v up">${fmt(c.t1)} <small>+${c.t1_pct}%</small></div></div>
+      <div class="cod-cell"><div class="k">TARGET 2</div><div class="v up">${fmt(c.t2)} <small>+${c.t2_pct}%</small></div></div>
+      <div class="cod-cell"><div class="k">TARGET 3</div><div class="v up">${fmt(c.t3)} <small>+${c.t3_pct}%</small></div></div>
+    </div>
+    <div class="cod-opt">
+      <div class="k">OPTION STRIKES (spot ${fmt(c.ltp)} · ATM ${c.atm})</div>
+      <div class="opt-row2">${(c.strikes||[]).map(o=>`
+        <span class="opt-chip ${o.type==='CE'?'ce':'pe'}">${c.symbol} ${o.strike} ${o.type}<i>${o.label}</i></span>`).join('')}</div>
+    </div>
+    <div class="cod-why">Why: ${c.why} · ${c.note}</div>
+    <div class="cod-plan">${c.plan}</div>`;
+}
+function codMsg(c){
+  return `🔥 KRT CALL OF THE DAY\n\n${c.symbol} (${c.sector}) — ${c.side}\nScore ${c.score}/100 · ${c.view}\n\n${c.side==='BUY'?'Buy zone':'Sell zone'}: ${c.zone_lo} – ${c.zone_hi}\nLTP: ₹${c.ltp}\n\nSL: ${c.sl} (${c.sl_pct}%)\nT1: ${c.t1} (+${c.t1_pct}%)\nT2: ${c.t2} (+${c.t2_pct}%)\nT3: ${c.t3} (+${c.t3_pct}%)\n\nOPTIONS:\n${(c.strikes||[]).map(o=>`• ${c.symbol} ${o.strike} ${o.type} (${o.label})`).join('\n')}\n\nWhy: ${c.why}\n${c.plan}\n\n⚠ Educational only. Not investment advice.`;
+}
+$('codSend') && ($('codSend').onclick=()=>{ if(codData) openWA(codMsg(codData)); });
+
 /* ---------- pre-open gap ---------- */
 let gapUpSet=new Set(), gapDownSet=new Set(), preopenData={up:[],down:[]};
 function renderPreopen(po){
@@ -470,7 +510,7 @@ function renderNewsSignals(sig){
         <span class="impact">${n.impact}/10 · ${n.ago||''}</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
       <div class="nh">${n.headline}</div>
       <div class="sig-foot"><span class="dn">${n.verdict}</span></div>
-    </div>`).join('')) || `<div class="empty">No fresh negative news 👍</div>`;
+    </div>`).join('')) || `<div class="empty">No fresh negative news</div>`;
 
   if(cr.length){
     $('crashBanner').style.display='block';
@@ -506,10 +546,10 @@ async function refresh(){
     renderStatus(d.status);
     renderBreadth(d.breadth);
     orRows(d.or5,'or5List','or5Tag','5-min High');
-    orRows(d.or15,'or15List','or15Tag','15-min High');
     renderMood(d.mood);
     renderTracker(d.tracker, d.ind_ready);
     renderOptions(uniq, rank, sectors.length);
+    renderCOD(d.call_day);
     renderZones(d.zones);
     renderPreopen(d.preopen);
     stockRows(d.gainers||[],'gainT');
