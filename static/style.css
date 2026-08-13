@@ -392,3 +392,18 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .cod-plan{font-size:.64rem;color:var(--amber);margin-top:4px}
 .z-lv i,.sr-lv i{font-style:normal;font-size:.52rem;color:var(--dim);display:block}
 .sr-lv i{display:inline;margin-left:3px}
+
+/* session pills + option chain */
+.sess-pill{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);
+  border-radius:999px;padding:4px 12px;font-size:.62rem;font-weight:700}
+.sess-pill .nt2{color:var(--dim);font-weight:400;font-size:.56rem}
+.sp-ok{border-color:rgba(22,214,122,.45);color:var(--bull)}
+.sp-bad{border-color:rgba(255,77,94,.45);color:var(--bear)}
+.sp-nt{border-color:rgba(245,184,64,.45);color:var(--amber)}
+.cod-chain{margin-top:11px;border-top:1px dashed var(--line);padding-top:9px}
+.cod-chain .k{font-size:.56rem;color:var(--dim);letter-spacing:.07em;margin-bottom:6px}
+.chain-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:7px}
+.ch-cell{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:7px;text-align:center}
+.ch-cell .k{font-size:.5rem;margin:0}
+.ch-cell .v{font-family:'Archivo';font-weight:900;font-size:.85rem;margin-top:2px}
+.ch-prem{font-size:.6rem;color:var(--cyan);margin-top:6px}
