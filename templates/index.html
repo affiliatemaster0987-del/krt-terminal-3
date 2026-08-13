@@ -38,12 +38,32 @@
 <main>
 <div class="grid">
 
-  <!-- ══ JACKPOT LIST ══ -->
+  <div class="card w12 cod">
+    <h2><span class="ic">🔥</span> CALL OF THE DAY — Highest Conviction <span class="tag live" id="codTag">--</span>
+      <button class="btn wa" id="codSend" style="margin-left:8px">🟢 Send to WhatsApp</button></h2>
+    <div id="codBox"></div>
+    <div class="hint">One pick per day with the strongest confirmation. Option strikes are suggestions based on the spot level — always check premium, liquidity and IV before trading. Educational only, not investment advice.</div>
+  </div>
+
+
+  <div class="card w12 glow-bull">
+    <h2><span class="ic">🎯</span> JACKPOT SUGGEST — Buy / Sell Zones <span class="tag live" id="zoneTag">--</span>
+      <button class="btn wa" id="zoneSend" style="margin-left:8px">🟢 Send zones to WhatsApp</button></h2>
+    <div class="zone-wrap" id="zoneBox"></div>
+    <div class="hint">Zone = the price band to act in. <b>MUST TRY</b> = score 85+ with sector and VWAP both confirming. Wait for price to enter the zone; do not chase. Educational only, not investment advice.</div>
+  </div>
   <div class="card w12">
     <h2><span class="ic">📊</span> AI PERFORMANCE — Accuracy Dashboard <span class="tag live" id="trkTag">--</span></h2>
     <div class="acc-wrap" id="accBox"></div>
     <div class="hint">Every signal is logged with entry, SL, T1/T2/T3 and exact times. Live prices decide the status. Accuracy builds over days — use it to judge which setups actually work.</div>
   </div>
+
+  <div class="card w12">
+    <h2><span class="ic">🗂</span> SIGNAL HISTORY — last 40 <span class="tag set">ALL SOURCES</span></h2>
+    <div class="feed" id="histBox" style="max-height:420px"></div>
+  </div>
+
+  <!-- ══ JACKPOT LIST ══ -->
 
   <div class="card w6">
     <h2><span class="ic">⏳</span> RUNNING CALLS — Live Status <span class="tag live" id="liveTag">--</span></h2>
@@ -88,13 +108,6 @@
 
   <!-- ══ NEWS JACKPOT / NEWS DANGER ══ -->
 
-  <div class="card w12 glow-bull">
-    <h2><span class="ic">🎯</span> JACKPOT SUGGEST — Buy / Sell Zones <span class="tag live" id="zoneTag">--</span>
-      <button class="btn wa" id="zoneSend" style="margin-left:8px">🟢 Send zones to WhatsApp</button></h2>
-    <div class="zone-wrap" id="zoneBox"></div>
-    <div class="hint">Zone = the price band to act in. <b>MUST TRY</b> = score 85+ with sector and VWAP both confirming. Wait for price to enter the zone; do not chase. Educational only, not investment advice.</div>
-  </div>
-
   <div class="card w6">
     <h2><span class="ic">📰</span> NEWS JACKPOT — Positive News Calls <span class="tag live">FAST</span></h2>
     <div class="feed" id="newsJackpot" style="max-height:300px"></div>
@@ -124,25 +137,9 @@
   </div>
 
   <!-- ══ BREAKOUT LISTS ══ -->
-  <div class="card">
-    <h2><span class="ic">⤴</span> Prev Day High Break <span class="tag live" id="pdhTag">--</span></h2>
-    <div class="feed" id="pdhList" style="max-height:280px"></div>
-  </div>
-  <div class="card">
-    <h2><span class="ic">📅</span> Prev Week High Break <span class="tag live" id="pwhTag">--</span></h2>
-    <div class="feed" id="pwhList" style="max-height:280px"></div>
-  </div>
-  <div class="card">
-    <h2><span class="ic">🕘</span> 1st 5-min Candle High Break <span class="tag live" id="orTag">--</span></h2>
-    <div class="feed" id="orList" style="max-height:280px"></div>
-  </div>
   <div class="card brk-list">
     <h2><span class="ic">🕐</span> KRT · First 5-min High Break <span class="tag live" id="or5Tag">--</span></h2>
     <div id="or5List"></div>
-  </div>
-  <div class="card brk-list">
-    <h2><span class="ic">🕒</span> KRT · First 15-min High Break <span class="tag live" id="or15Tag">--</span></h2>
-    <div id="or15List"></div>
   </div>
 
   <div class="card w12 brk-list">
@@ -210,11 +207,6 @@
   <div class="card w6">
     <h2><span class="ic">📡</span> Fresh Market News (last 10 hrs) <span class="tag live">LIVE</span></h2>
     <div class="feed" id="newsList" style="max-height:320px"></div>
-  </div>
-
-  <div class="card w12">
-    <h2><span class="ic">🗂</span> SIGNAL HISTORY — last 40 <span class="tag set">ALL SOURCES</span></h2>
-    <div class="feed" id="histBox" style="max-height:420px"></div>
   </div>
 
 </div>
