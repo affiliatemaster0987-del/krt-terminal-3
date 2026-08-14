@@ -1,4 +1,4 @@
-/* ═══════════ KRT AI 9.0 — LIVE (Angel One + Option Chain) ═══════════ */
+/* ═══════════ KRT AI 9.6 — LIVE (Angel One + Option Chain + Index Setups) ═══════════ */
 const CONFIG = { DASHBOARD:"/api/dashboard", NEWS:"/api/news", REFRESH_MS:15000, MARKET_CLOSE:"15:30" };
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n||0).toLocaleString('en-IN');
@@ -358,6 +358,69 @@ $('zoneSend') && ($('zoneSend').onclick=()=>{
     `${z.must?'⭐ ':''}${z.symbol} ${z.side} ${z.zone_lo}–${z.zone_hi} | SL ${z.sl} | T1 ${z.t1} (+${z.t1_pct}%) | ${z.score}/100`).join('\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+/* ---------- index option setups ---------- */
+let idxData=[];
+function renderIdxSetups(list){
+  idxData=list||[];
+  if(!$('idxSetupBox'))return;
+  const best=idxData.find(x=>x.side&&x.conf>=2);
+  $('idxSetTag').textContent = best? `BEST: ${best.index} ${best.side} · ${best.score}/100` : 'NO CLEAR SETUP';
+  $('idxSetupBox').innerHTML = idxData.length? idxData.map(x=>{
+    const isBest = best && x.index===best.index;
+    const cls = x.side==='CE'?'ice':x.side==='PE'?'ipe':'iflat';
+    return `<div class="idx-card ${cls} ${isBest?'best':''}">
+      <div class="i-top"><b class="i-sym">${x.index}</b>
+        ${x.side?`<span class="chip ${x.side==='CE'?'up':'dn'}">${x.side}</span>`:'<span class="chip nt">WAIT</span>'}
+        ${isBest?'<span class="must-tag">⭐ BEST SETUP</span>':''}
+        <span class="i-score">${x.score}<small>/100</small></span></div>
+      <div class="i-spot">₹${fmt(x.spot)} <span class="${x.chg>=0?'up':'dn'}">${x.chg>=0?'▲':'▼'}${Math.abs(x.chg)}%</span>
+        <span class="i-conf">conf ${x.conf} · bull ${x.bull} / bear ${x.bear}</span></div>
+      ${x.strikes&&x.strikes.length?`<div class="opt-row2">${x.strikes.map(o=>`
+        <span class="opt-chip ${o.type==='CE'?'ce':'pe'}">${x.opt} ${o.strike} ${o.type}<i>${o.label}</i></span>`).join('')}</div>`:''}
+      ${x.trade?`<div class="prem-box">
+        <div class="pb-head"><b>${x.trade.symbol}</b>
+          <span class="pb-entry">ENTRY ₹${fmt(x.trade.entry)}</span>
+          <span class="pb-rr">R:R 1:${x.trade.rr}</span></div>
+        <div class="pb-grid">
+          <div class="pb-cell sl"><div class="k">SL</div><div class="v">₹${fmt(x.trade.sl)}</div><div class="p">${x.trade.sl_pct}%</div></div>
+          <div class="pb-cell tg"><div class="k">TARGET 1</div><div class="v">₹${fmt(x.trade.t1)}</div><div class="p">+${x.trade.t1_pct}%</div></div>
+          <div class="pb-cell tg"><div class="k">TARGET 2</div><div class="v">₹${fmt(x.trade.t2)}</div><div class="p">+${x.trade.t2_pct}%</div></div>
+          <div class="pb-cell tg"><div class="k">TARGET 3</div><div class="v">₹${fmt(x.trade.t3)}</div><div class="p">+${x.trade.t3_pct}%</div></div>
+        </div>
+        <div class="pb-spot">Spot levels — SL ${fmt(x.trade.spot_sl)} · T1 ${fmt(x.trade.spot_t1)} · T2 ${fmt(x.trade.spot_t2)} · T3 ${fmt(x.trade.spot_t3)}</div>
+        <div class="pb-note">${x.trade.note}</div>
+      </div>`
+      : (x.spot_sl?`<div class="i-lv"><span class="s">Spot SL ${fmt(x.spot_sl)}</span>
+        <span class="t">T1 ${fmt(x.spot_t1)}</span><span class="t">T2 ${fmt(x.spot_t2)}</span></div>`:'')}
+      ${x.chain?`<div class="chain-grid mini">
+        <div class="ch-cell"><div class="k">PCR</div><div class="v ${x.chain.pcr>=1?'up':'dn'}">${x.chain.pcr??'—'}</div></div>
+        <div class="ch-cell"><div class="k">MAX PAIN</div><div class="v nt">${x.chain.max_pain??'—'}</div></div>
+        <div class="ch-cell"><div class="k">SUPPORT</div><div class="v up">${x.chain.support??'—'}</div></div>
+        <div class="ch-cell"><div class="k">RESIST</div><div class="v dn">${x.chain.resistance??'—'}</div></div>
+        <div class="ch-cell"><div class="k">WRITERS</div><div class="v ${x.chain.bias==='BULLISH'?'up':x.chain.bias==='BEARISH'?'dn':'nt'}">${x.chain.writer}</div></div>
+      </div>${x.chain.atm_ce!=null?`<div class="ch-prem">ATM ${x.chain.atm} · CE ₹${x.chain.atm_ce} · PE ₹${x.chain.atm_pe}</div>`:''}`:''}
+      <div class="i-why">${x.why}</div>
+      <div class="i-verdict ${x.side&&x.conf>=2?'ok':'warn'}">${x.verdict}</div>
+      <div class="sig-foot"><button class="btn wa mini" onclick="waIdx('${x.index}')">🟢 WA</button></div>
+    </div>`;
+  }).join('') : `<div class="empty">Index data loading…</div>`;
+}
+function idxMsg(x){
+  const t=x.trade;
+  return `📈 KRT INDEX SETUP — ${x.index}\n\nSpot ₹${x.spot} (${x.chg>=0?'+':''}${x.chg}%)\nSetup: ${x.side||'WAIT'} · Score ${x.score}/100 · Conf ${x.conf}\n`+
+    (t?`\n🎯 ${t.symbol}\nEntry: ₹${t.entry}\nSL: ₹${t.sl} (${t.sl_pct}%)\nT1: ₹${t.t1} (+${t.t1_pct}%)\nT2: ₹${t.t2} (+${t.t2_pct}%)\nT3: ₹${t.t3} (+${t.t3_pct}%)\nR:R 1:${t.rr}\n\nSpot SL ${t.spot_sl} · T1 ${t.spot_t1} · T2 ${t.spot_t2}\n${t.note}\n`
+      : (x.strikes&&x.strikes.length?`\nStrikes: ${x.strikes.map(o=>`${x.opt} ${o.strike} ${o.type}`).join(', ')}\n`:''))+
+    (x.chain?`\nOI: ${x.chain.writer} · PCR ${x.chain.pcr}\nSupport ${x.chain.support} · Resistance ${x.chain.resistance} · Max pain ${x.chain.max_pain}\n`:'')+
+    `\nWhy: ${x.why}\n${x.verdict}\n\n⚠ Educational only. Not investment advice.`;
+}
+function waIdx(name){ const x=idxData.find(y=>y.index===name); if(x) openWA(idxMsg(x)); }
+$('idxSend') && ($('idxSend').onclick=()=>{
+  if(!idxData.length)return;
+  openWA('📈 KRT INDEX OPTIONS VIEW\n\n'+idxData.map(x=>
+    `${x.index}: ${x.side||'WAIT'} ${x.score}/100 · spot ${x.spot} (${x.chg>=0?'+':''}${x.chg}%)${x.trade?`\n   ${x.trade.symbol} @ ₹${x.trade.entry} · SL ₹${x.trade.sl} · T1 ₹${x.trade.t1}`:''}\n   ${x.verdict}`).join('\n\n')+
+    '\n\n⚠ Educational only. Not investment advice.');
+});
+
 /* ---------- session + index bias ---------- */
 function renderSession(sess, ib){
   if(sess && $('sessPill')){
@@ -578,6 +641,7 @@ async function refresh(){
     renderTracker(d.tracker, d.ind_ready);
     renderOptions(uniq, rank, sectors.length);
     renderSession(d.session, d.index_bias);
+    renderIdxSetups(d.index_setups);
     renderCOD(d.call_day);
     renderZones(d.zones);
     renderPreopen(d.preopen);
