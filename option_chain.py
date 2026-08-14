@@ -172,6 +172,9 @@ def get_chain(sym, spot, sc=None):
             "writer": writer, "bias": bias,
             "ce_oi": int(ce_oi), "pe_oi": int(pe_oi),
             "atm_ce": calls.get(atm, {}).get("ltp"), "atm_pe": puts.get(atm, {}).get("ltp"),
+            "strikes_ce": {str(k): v for k, v in calls.items()},
+            "strikes_pe": {str(k): v for k, v in puts.items()},
+            "step": (strikes[1] - strikes[0]) if len(strikes) > 1 else None,
             "updated": _ist().strftime("%H:%M:%S"),
         }
         with _lock:
@@ -201,3 +204,29 @@ def confirm(sym, spot, side):
         if ch["bias"] == "BULLISH":
             return -15, f"OI blocks: {ch['writer']}", ch
     return 0, f"OI balanced (PCR {ch['pcr']})", ch
+
+
+def strike_quote(chain, strike, side):
+    """Premium + OI for a specific strike from an already-fetched chain."""
+    if not chain:
+        return None
+    book = chain.get("strikes_ce" if side == "CE" else "strikes_pe") or {}
+    for k in (str(strike), str(float(strike)), str(int(strike))):
+        if k in book:
+            q = book[k]
+            return {"strike": float(k), "type": side, "ltp": q.get("ltp"),
+                    "oi": q.get("oi"), "chg": q.get("chg")}
+    return None
+
+
+def est_delta(spot, strike, side, step):
+    """Rough delta by moneyness — enough for premium target maths."""
+    if not step:
+        step = max(spot * 0.005, 1)
+    steps_otm = ((strike - spot) / step) if side == "CE" else ((spot - strike) / step)
+    if steps_otm <= -1.5: return 0.80      # deep ITM
+    if steps_otm <= -0.5: return 0.65
+    if steps_otm < 0.5:   return 0.50      # ATM
+    if steps_otm < 1.5:   return 0.35
+    if steps_otm < 2.5:   return 0.22
+    return 0.14
