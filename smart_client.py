@@ -19,7 +19,11 @@ INDICES = {
     "NIFTY 50":  "99926000",
     "BANKNIFTY": "99926009",
     "INDIA VIX": "99926017",
+    "FINNIFTY":  "99926037",
 }
+# Angel option-chain name for each index
+IDX_OPT_NAME = {"NIFTY 50": "NIFTY", "BANKNIFTY": "BANKNIFTY", "FINNIFTY": "FINNIFTY"}
+IDX_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50}
 
 # ───────────────────────── F&O UNIVERSE + SECTORS ─────────────────────────
 # symbol : sector   (Angel token auto-resolve ஆகும் — hardcode இல்லை)
@@ -569,8 +573,9 @@ def build_dashboard():
 
     # ── self-built candles + real indicators ──
     try:
-        IND.feed(stocks)
+        IND.feed(stocks + indices)
         IND.enrich(stocks)
+        IND.enrich(indices)
         IND.update_tracker({r["symbol"]: r["ltp"] for r in stocks})
     except Exception as e:
         print("indicator error:", e)
@@ -811,6 +816,123 @@ def build_dashboard():
     except Exception as e:
         print("zone error:", e)
 
+    # ── INDEX SETUPS (NIFTY / BANKNIFTY / FINNIFTY) ──
+    index_setups = []
+    try:
+        for ix in indices:
+            name = ix["symbol"]
+            opt = IDX_OPT_NAME.get(name)
+            if not opt:
+                continue
+            spot = ix.get("ltp") or 0
+            if not spot:
+                continue
+            ind = ix.get("ind") or {}
+            chg = ix.get("chg", 0)
+            vwap = ind.get("vwap")
+            rsi = ind.get("rsi")
+            adx = ind.get("adx")
+            htf = (ind.get("htf") or {}).get("align", 0)
+            dh, dl = ind.get("day_high"), ind.get("day_low")
+
+            score, why, side = 50, [], None
+            bull = bear = 0
+            if chg >= 0.15: bull += 1; why.append(f"index +{chg}%")
+            elif chg <= -0.15: bear += 1; why.append(f"index {chg}%")
+            if vwap:
+                if spot > vwap: bull += 1; why.append("above VWAP")
+                else: bear += 1; why.append("below VWAP")
+            if rsi is not None:
+                if rsi >= 58: bull += 1; why.append(f"RSI {rsi}")
+                elif rsi <= 42: bear += 1; why.append(f"RSI {rsi}")
+            if htf == 1: bull += 1; why.append("HTF up")
+            elif htf == -1: bear += 1; why.append("HTF down")
+            if dh and spot >= dh * 0.999: bull += 1; why.append("near day high")
+            if dl and spot <= dl * 1.001: bear += 1; why.append("near day low")
+
+            chain = OC.get_chain(opt, spot)
+            if chain:
+                if chain["bias"] == "BULLISH": bull += 2; why.append(f"{chain['writer']} (PCR {chain['pcr']})")
+                elif chain["bias"] == "BEARISH": bear += 2; why.append(f"{chain['writer']} (PCR {chain['pcr']})")
+                mp = chain.get("max_pain")
+                if mp:
+                    if spot < mp * 0.998: bull += 1; why.append(f"below max pain {mp}")
+                    elif spot > mp * 1.002: bear += 1; why.append(f"above max pain {mp}")
+
+            side = "CE" if bull > bear else "PE" if bear > bull else None
+            conf = abs(bull - bear)
+            score = min(99, 45 + conf * 9 + (6 if chain else 0) + sess["mult"])
+
+            step = IDX_STEP.get(opt, 50)
+            atm = round(spot / step) * step
+            # ── ATR-based spot levels (index ATR from own candles, floored) ──
+            iatr = ind.get("atr") or 0
+            rng = (dh - dl) if (dh and dl) else spot * 0.004
+            iatr = max(iatr, spot * 0.0025, rng * 0.30)
+
+            trade = None
+            if side == "CE":
+                strikes = [{"strike": int(atm), "type": "CE", "label": "ATM"},
+                           {"strike": int(atm + step), "type": "CE", "label": "OTM 1"}]
+                sl_lvl = round(spot - 1.2 * iatr, 2)
+                if dl: sl_lvl = round(min(sl_lvl, dl * 0.9995), 2)
+                t1 = round(spot + 1.5 * iatr, 2); t2 = round(spot + 2.5 * iatr, 2)
+                t3 = round(spot + 4.0 * iatr, 2)
+            elif side == "PE":
+                strikes = [{"strike": int(atm), "type": "PE", "label": "ATM"},
+                           {"strike": int(atm - step), "type": "PE", "label": "OTM 1"}]
+                sl_lvl = round(spot + 1.2 * iatr, 2)
+                if dh: sl_lvl = round(max(sl_lvl, dh * 1.0005), 2)
+                t1 = round(spot - 1.5 * iatr, 2); t2 = round(spot - 2.5 * iatr, 2)
+                t3 = round(spot - 4.0 * iatr, 2)
+            else:
+                strikes, sl_lvl, t1, t2, t3 = [], None, None, None, None
+
+            # ── PREMIUM TRADE PLAN for the ATM strike ──
+            if side and chain:
+                pick = strikes[0]["strike"]
+                q = OC.strike_quote(chain, pick, side)
+                if q and q.get("ltp"):
+                    prem = float(q["ltp"])
+                    dlt = OC.est_delta(spot, pick, side, chain.get("step") or step)
+                    move_t1 = abs(t1 - spot); move_t2 = abs(t2 - spot)
+                    move_t3 = abs(t3 - spot); move_sl = abs(sl_lvl - spot)
+                    p_t1 = round(prem + dlt * move_t1, 2)
+                    p_t2 = round(prem + dlt * move_t2, 2)
+                    p_t3 = round(prem + dlt * move_t3, 2)
+                    p_sl = round(max(prem - dlt * move_sl, prem * 0.65), 2)   # cap loss ~35%
+                    rr = round((p_t1 - prem) / max(prem - p_sl, 0.05), 2)
+                    trade = {
+                        "symbol": f"{opt} {int(pick)} {side}", "strike": int(pick), "type": side,
+                        "entry": prem, "delta": dlt, "oi": q.get("oi"),
+                        "t1": p_t1, "t2": p_t2, "t3": p_t3, "sl": p_sl,
+                        "t1_pct": round((p_t1 - prem) / prem * 100, 1),
+                        "t2_pct": round((p_t2 - prem) / prem * 100, 1),
+                        "t3_pct": round((p_t3 - prem) / prem * 100, 1),
+                        "sl_pct": round((p_sl - prem) / prem * 100, 1),
+                        "rr": rr,
+                        "spot_sl": sl_lvl, "spot_t1": t1, "spot_t2": t2, "spot_t3": t3,
+                        "note": ("Exit the option when SPOT breaks the spot SL — do not wait for the "
+                                 "premium SL. Premium levels assume delta stays near "
+                                 f"{dlt} and ignore theta/IV change."),
+                    }
+
+            index_setups.append({
+                "index": name, "opt": opt, "spot": round(spot, 2), "chg": chg,
+                "side": side, "score": score if side else 35, "conf": conf,
+                "bull": bull, "bear": bear, "atm": int(atm), "step": step,
+                "strikes": strikes, "spot_sl": sl_lvl, "spot_t1": t1, "spot_t2": t2,
+                "spot_t3": t3 if side else None, "atr": round(iatr, 2), "trade": trade,
+                "vwap": vwap, "rsi": rsi, "adx": adx,
+                "chain": chain, "why": ", ".join(why) or "no clear edge",
+                "verdict": ("Sideways — avoid index options, premium decays"
+                            if not side or conf < 2 else
+                            f"{'Bullish' if side=='CE' else 'Bearish'} setup — trade {side} on dips"),
+            })
+        index_setups.sort(key=lambda x: -x["score"])
+    except Exception as e:
+        print("index setup error:", e)
+
     # ── CALL OF THE DAY (single best conviction pick + option strikes) ──
     def _strike_step(p):
         if p < 200: return 5
@@ -872,6 +994,7 @@ def build_dashboard():
                     "final": _preopen["final"], "count": len(_preopen["rows"])},
         "mood": _market_mood(stocks, indices),
         "global": get_global_cues(),
+        "index_setups": index_setups,
         "session": sess,
         "index_bias": ibias,
         "zones": zones[:14],
