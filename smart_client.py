@@ -558,7 +558,21 @@ def _market_mood(stocks, indices):
             "vix_chg": vix_chg, "nifty_chg": nf}
 
 
+_dash = {"data": None, "ts": 0}
+DASH_CACHE_SEC = 6
+
+
 def build_dashboard():
+    """Cached wrapper — heavy work runs at most once every DASH_CACHE_SEC."""
+    now = time.time()
+    if _dash["data"] and now - _dash["ts"] < DASH_CACHE_SEC:
+        return _dash["data"]
+    d = _build_dashboard_inner()
+    _dash.update(data=d, ts=now)
+    return d
+
+
+def _build_dashboard_inner():
     rows, mode = get_quotes()
     indices = [r for r in rows if r["symbol"] in INDICES]
     stocks = [r for r in rows if r["symbol"] not in INDICES]
@@ -801,7 +815,9 @@ def build_dashboard():
                     "note": "Sell on bounce into zone" if px < z_lo else "In zone now",
                 })
         zones.sort(key=lambda z: (-int(z["must"]), -z["score"]))
-        for z in zones[:6]:                      # only top zones -> API friendly
+        _mins = _ist_now().hour * 60 + _ist_now().minute
+        _oc_on = 540 <= _mins <= 935          # 9:00 - 15:35 only
+        for z in (zones[:3] if _oc_on else []):
             try:
                 d_, tag_, ch_ = OC.confirm(z["symbol"], z["ltp"], z["side"])
                 if tag_:
@@ -815,6 +831,49 @@ def build_dashboard():
         zones.sort(key=lambda z: (-int(z["must"]), -z["score"]))
     except Exception as e:
         print("zone error:", e)
+
+    # ── STRUCTURE ALERTS: breakout / breakdown / support break ──
+    structure = []
+    try:
+        for r in stocks:
+            ind = r.get("ind") or {}
+            px = r.get("ltp") or 0
+            hi, lo = r.get("high"), r.get("low")
+            if not px or not hi or not lo or hi <= lo:
+                continue
+            vwap = ind.get("vwap"); pdh = ind.get("pdh"); pdl = ind.get("pdl")
+            vol = r.get("volume") or 0
+            rng = hi - lo
+            near_hi = px >= hi - rng * 0.15
+            near_lo = px <= lo + rng * 0.15
+            ev, kind, note = None, None, ""
+            if pdh and px > pdh and near_hi and r["chg"] > 0.5:
+                ev, kind = "STRONG BREAKOUT", "up"
+                note = f"Broke previous day high {pdh} and holding near day high"
+            elif near_hi and r["chg"] >= 1.5 and vol > 1e6 and (not vwap or px > vwap):
+                ev, kind = "BREAKOUT", "up"
+                note = f"At day high {hi} with volume, above VWAP"
+            elif pdl and px < pdl and near_lo and r["chg"] < -0.5:
+                ev, kind = "STRONG BREAKDOWN", "dn"
+                note = f"Broke previous day low {pdl} and holding near day low"
+            elif near_lo and r["chg"] <= -1.5 and vol > 1e6 and (not vwap or px < vwap):
+                ev, kind = "BREAKDOWN", "dn"
+                note = f"At day low {lo} with volume, below VWAP"
+            elif vwap and abs(px - vwap) / px < 0.0015 and r["chg"] < 0:
+                ev, kind = "SUPPORT BREAK", "dn"
+                note = f"Losing VWAP support {round(vwap, 2)}"
+            if ev:
+                structure.append({
+                    "symbol": r["symbol"], "sector": r["sector"], "event": ev, "dir": kind,
+                    "ltp": px, "chg": r["chg"], "volume": vol, "note": note,
+                    "level": pdh if kind == "up" else (pdl or vwap),
+                    "action": ("Watch for follow-through — CE side" if kind == "up"
+                               else "Weakness confirmed — PE side"),
+                })
+        structure.sort(key=lambda x: -abs(x["chg"]))
+        structure = structure[:15]
+    except Exception as e:
+        print("structure error:", e)
 
     # ── INDEX SETUPS (NIFTY / BANKNIFTY / FINNIFTY) ──
     index_setups = []
@@ -850,7 +909,8 @@ def build_dashboard():
             if dh and spot >= dh * 0.999: bull += 1; why.append("near day high")
             if dl and spot <= dl * 1.001: bear += 1; why.append("near day low")
 
-            chain = OC.get_chain(opt, spot)
+            _m2 = _ist_now().hour * 60 + _ist_now().minute
+            chain = OC.get_chain(opt, spot) if 540 <= _m2 <= 935 else None
             if chain:
                 if chain["bias"] == "BULLISH": bull += 2; why.append(f"{chain['writer']} (PCR {chain['pcr']})")
                 elif chain["bias"] == "BEARISH": bear += 2; why.append(f"{chain['writer']} (PCR {chain['pcr']})")
@@ -917,6 +977,11 @@ def build_dashboard():
                                  f"{dlt} and ignore theta/IV change."),
                     }
 
+            if trade and conf >= 3 and 555 <= (_ist_now().hour * 60 + _ist_now().minute) <= 915:
+                IND.log_signal(trade["symbol"], "BUY", trade["entry"], trade["sl"],
+                               trade["t1"], trade["t2"], trade["t3"],
+                               score, f"{name} {side} · {', '.join(why[:3])}", "INDEX")
+
             index_setups.append({
                 "index": name, "opt": opt, "spot": round(spot, 2), "chg": chg,
                 "side": side, "score": score if side else 35, "conf": conf,
@@ -959,7 +1024,11 @@ def build_dashboard():
                            {"strike": int(atm - step), "type": "PE", "label": "OTM 1"},
                            {"strike": int(atm - 2 * step), "type": "PE", "label": "OTM 2"}]
                 view = "Bearish — PE side"
-            oc_delta, oc_tag, chain = OC.confirm(best["symbol"], px, best["side"])
+            _m = _ist_now().hour * 60 + _ist_now().minute
+            if 540 <= _m <= 935:
+                oc_delta, oc_tag, chain = OC.confirm(best["symbol"], px, best["side"])
+            else:
+                oc_delta, oc_tag, chain = 0, None, None
             best = {**best, "score": min(99, max(20, best["score"] + oc_delta))}
             if oc_tag:
                 best["why"] = best["why"] + " · " + oc_tag
@@ -994,6 +1063,7 @@ def build_dashboard():
                     "final": _preopen["final"], "count": len(_preopen["rows"])},
         "mood": _market_mood(stocks, indices),
         "global": get_global_cues(),
+        "structure": structure,
         "index_setups": index_setups,
         "session": sess,
         "index_bias": ibias,
