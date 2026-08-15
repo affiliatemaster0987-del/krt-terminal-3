@@ -30,6 +30,7 @@
   <div class="cmd-right">
     <div class="mkt-status" id="mktStatus"></div>
     <button class="snd" id="sndBtn">🔇 Sound</button>
+    <span class="online" id="onlineCount">–</span>
     <span class="live-dot"></span>
   </div>
 </div></div>
@@ -45,6 +46,18 @@
       <button class="btn wa" id="idxSend" style="margin-left:8px">🟢 Send index view to WhatsApp</button></h2>
     <div class="idx-wrap" id="idxSetupBox"></div>
     <div class="hint">Best index setup is highlighted. Conf = how many signals agree (price, VWAP, RSI, HTF, option-chain writers, max pain). Conf under 2 means sideways — index options lose to theta decay on such days. Educational only, not investment advice.</div>
+  </div>
+
+
+  <div class="card w12">
+    <h2><span class="ic">📒</span> TODAY'S TRADE LOG — every call and its result <span class="tag live" id="logTag">--</span></h2>
+    <div class="feed" id="tradeLog" style="max-height:460px"></div>
+    <div class="hint">Every call the terminal gives — index options and stocks — with the time it was given and what happened after: TARGET HIT or SL HIT. This is the honest record; use it to judge accuracy yourself.</div>
+  </div>
+
+  <div class="card w12">
+    <h2><span class="ic">⚡</span> BREAKOUT / BREAKDOWN ALERTS — F&amp;O stocks <span class="tag live" id="strTag">--</span></h2>
+    <div class="feed" id="strBox" style="max-height:380px"></div>
   </div>
 
   <div class="card w12 cod">
@@ -65,6 +78,23 @@
     <h2><span class="ic">📊</span> AI PERFORMANCE — Accuracy Dashboard <span class="tag live" id="trkTag">--</span></h2>
     <div class="acc-wrap" id="accBox"></div>
     <div class="hint">Every signal is logged with entry, SL, T1/T2/T3 and exact times. Live prices decide the status. Accuracy builds over days — use it to judge which setups actually work.</div>
+  </div>
+
+
+  <div class="card w12">
+    <h2><span class="ic">🔗</span> CHARTINK CONNECT <span class="tag set">SETUP</span></h2>
+    <div class="cn-grid">
+      <div><label>WEBHOOK RECEIVER URL</label>
+      <input id="ckUrl" placeholder="https://krt-terminal-3.onrender.com/webhook/chartink"></div>
+      <div class="btnrow"><button class="btn pri" id="ckSave">Save</button></div>
+      <div class="status" id="ckStatus">Not configured</div>
+    </div>
+    <div class="hint">In Chartink: open your scanner → Create Alert → paste this Webhook URL. Your scanner name and stocks appear in KRT · My Scanner Calls.</div>
+  </div>
+
+  <div class="card w12">
+    <h2><span class="ic">📡</span> FRESH MARKET NEWS (LAST 10 HRS) <span class="tag live">LIVE</span></h2>
+    <div class="feed" id="newsList" style="max-height:340px"></div>
   </div>
 
   <div class="card w12">
@@ -185,40 +215,6 @@
   </div>
 
   <!-- ══ WHATSAPP SETUP ══ -->
-  <div class="card w6">
-    <h2><span class="ic">📲</span> WhatsApp Alerts <span class="tag set">SETUP</span></h2>
-    <div class="cn-grid">
-      <div><label>WHATSAPP NUMBER (country code-oda, e.g. 9198xxxxxxxx)</label><input id="waNum" placeholder="9198xxxxxxxx"></div>
-      <div class="btnrow">
-        <button class="btn pri" id="alSave">Save</button>
-        <button class="btn wa" id="waTest">🟢 Test message</button>
-      </div>
-      <div class="status" id="alStatus">Save your number — jackpot / danger alerts open in WhatsApp.</div>
-    </div>
-    <div class="hint">Every card has a <b>🟢 WA</b> button — one click opens that signal in WhatsApp, ready to send.</div>
-  </div>
-
-  <!-- ══ CHARTINK ══ -->
-  <div class="card w6">
-    <h2><span class="ic">🔗</span> Chartink Connect <span class="tag set">SETUP</span></h2>
-    <div class="cn-grid">
-      <div><label>WEBHOOK RECEIVER URL</label>
-      <input id="ckUrl" placeholder="https://krt-terminal-3.onrender.com/webhook/chartink"></div>
-      <div class="btnrow">
-        <button class="btn pri" id="ckSave">Save</button>
-      </div>
-      <div class="status" id="ckStatus">Not configured</div>
-    </div>
-    <div class="hint">In Chartink: open your scanner → Create Alert → paste this Webhook URL.</div>
-  </div>
-
-  <!-- ══ ALERTS + NEWS FEED ══ -->
-  <div class="card w6">
-    <h2><span class="ic">📡</span> Fresh Market News (last 10 hrs) <span class="tag live">LIVE</span></h2>
-    <div class="feed" id="newsList" style="max-height:320px"></div>
-  </div>
-
-</div>
 
 <footer>
   KRT AI Terminal 3.0 · <span id="uniCount">--</span> stocks live via Angel One · Educational &amp; personal use · Not investment advice · SEBI RA registration required for public advisory
