@@ -424,6 +424,7 @@ def stats():
     t_rows = [s for s in _signals if s["date"] == today]
     completed = [s for s in t_rows if s["status"] in ("TARGET COMPLETED", "SL HIT", "T1 HIT", "T2 HIT", "EXPIRED")]
     return {
+        "today_date": today,
         "today": _acc(t_rows),
         "d7": _acc([s for s in _signals if s["date"] >= d7]),
         "d30": _acc([s for s in _signals if s["date"] >= d30]),
