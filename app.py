@@ -14,6 +14,21 @@ def home():
     return render_template("index.html")
 
 
+_online = {}
+ONLINE_WINDOW = 90        # seconds
+
+
+@app.route("/api/online")
+def api_online():
+    import time as _t
+    now = _t.time()
+    vid = request.args.get("id") or request.remote_addr or "anon"
+    _online[vid] = now
+    for k in [k for k, v in _online.items() if now - v > ONLINE_WINDOW]:
+        _online.pop(k, None)
+    return jsonify({"online": len(_online)})
+
+
 @app.route("/api/dashboard")
 def dashboard():
     try:
