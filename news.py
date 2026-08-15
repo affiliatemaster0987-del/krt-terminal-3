@@ -24,6 +24,15 @@ FEEDS = [
     ("ET Stocks",         "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms"),
     ("BS Markets",        "https://www.business-standard.com/rss/markets-106.rss"),
     ("BS Companies",      "https://www.business-standard.com/rss/companies-101.rss"),
+    ("Livemint Mkt",      "https://www.livemint.com/rss/markets"),
+    ("Livemint Cos",      "https://www.livemint.com/rss/companies"),
+    ("CNBC TV18",         "https://www.cnbctv18.com/commonfeeds/v1/cne/rss/market.xml"),
+    ("CNBC Business",     "https://www.cnbctv18.com/commonfeeds/v1/cne/rss/business.xml"),
+    ("NDTV Profit",       "https://feeds.feedburner.com/ndtvprofit-latest"),
+    ("Financial Express", "https://www.financialexpress.com/market/feed/"),
+    ("ET Industry",       "https://economictimes.indiatimes.com/industry/rssfeeds/13352306.cms"),
+    ("Zee Business",      "https://www.zeebiz.com/latest.xml/feed"),
+    ("Reuters India",     "https://www.thehindubusinessline.com/markets/feeder/default.rss"),
 ]
 
 RESULT_WORDS = ["q1 results", "q2 results", "q3 results", "q4 results", "quarterly results",
@@ -72,6 +81,47 @@ STOCK_KEYWORDS = ["RELIANCE", "TCS", "HDFC", "INFOSYS", "INFY", "SBI", "ICICI", 
                   "JSW", "DLF", "DMART", "NESTLE", "BRITANNIA", "APOLLO", "CROMPTON",
                   "CHOLA", "BHEL", "IRFC", "RVNL", "IRCTC", "PFC", "REC", "GAIL",
                   "BPCL", "IOC", "TECH MAHINDRA", "HCL", "LTIMINDTREE", "PERSISTENT"]
+
+def _crash_action(impact):
+    if impact >= 9:
+        return "HIGH IMPACT — avoid fresh longs, focus PE side, keep SL tight"
+    if impact >= 7:
+        return "MEDIUM IMPACT — reduce long size, PE setups favoured"
+    return "LOW IMPACT — watch only, no action needed"
+
+
+def _affect(impact):
+    if impact >= 9:
+        return {"level": "HIGH", "note": "Big crash possible — index may gap down, PE side favoured",
+                "focus": "PE"}
+    if impact >= 7:
+        return {"level": "MEDIUM", "note": "Market may stay weak — avoid aggressive longs",
+                "focus": "PE"}
+    return {"level": "LOW", "note": "Limited market impact", "focus": "NONE"}
+
+
+# company-level events that move a single stock hard
+EVENT_BAD = ["resigns", "resignation", "steps down", "quits", "sacked", "removed as",
+             "cfo exit", "ceo exit", "md resigns", "auditor resigns", "board exit",
+             "stake sale by promoter", "promoter pledge", "block deal sell",
+             "downgrade", "cut to sell", "target cut", "guidance cut", "profit warning",
+             "penalty", "fine of", "sebi order", "gst notice", "tax demand",
+             "plant shut", "fire at", "strike at", "recall", "probe", "raid", "fraud"]
+EVENT_GOOD = ["appoints", "new ceo", "new md", "order win", "wins order", "bags order",
+              "wins contract", "bags contract", "acquires", "acquisition", "merger",
+              "buyback", "bonus issue", "stock split", "dividend declared",
+              "upgrade to buy", "target raised", "capacity expansion", "new plant",
+              "block deal buy", "stake buy", "fundraise", "qip"]
+
+
+def _event_kind(title):
+    t = title.lower()
+    if any(w in t for w in EVENT_BAD):
+        return "BAD"
+    if any(w in t for w in EVENT_GOOD):
+        return "GOOD"
+    return None
+
 
 _news_cache = {"items": [], "ts": 0}
 _lock = threading.Lock()
@@ -155,7 +205,7 @@ def _fetch_feed(source, url):
         if _is_noise(low):
             continue
         tag, impact = _classify(title)
-        out.append({"source": source, "title": title,
+        out.append({"source": source, "title": title, "event": _event_kind(title),
                     "link": (item.findtext("link") or "").strip(),
                     "age_h": round(age, 2) if age is not None else 99, "ago": _ago(age),
                     "tag": tag, "impact": impact, "stocks": _affected(title)})
@@ -234,7 +284,7 @@ def get_news_signals():
         base = {"headline": n["title"][:130], "impact": n["impact"], "tag": tag,
                 "ago": n["ago"], "source": n["source"], "link": n.get("link", "")}
         if tag == "CRASH RISK":
-            crash.append({**base,
+            crash.append({**base, "affect": _affect(n["impact"]),
                           "action": "⚠ MARKET CRASH RISK — புது long வேண்டாம், SL tight"})
             continue
         syms = [_ALIAS.get(s, s) for s in n.get("stocks", [])]
@@ -273,6 +323,25 @@ def get_news_signals():
             seen.add(k); out.append(x)
         return out
 
-    return {"jackpot": uniq(jackpot)[:10], "danger": uniq(danger)[:10],
+    # company events -> push alerts
+    events = []
+    for n in get_news():
+        ek = n.get("event")
+        if not ek:
+            continue
+        syms = [_ALIAS.get(s, s) for s in n.get("stocks", [])]
+        real = [s for s in syms if s not in ("NIFTY", "SENSEX")]
+        if not real:
+            continue
+        me = smap.get(real[0])
+        events.append({"symbol": real[0], "kind": ek, "headline": n["title"][:130],
+                       "impact": n["impact"], "ago": n["ago"], "source": n["source"],
+                       "link": n.get("link", ""), "chg": (me or {}).get("chg"),
+                       "action": ("DANGER — company event, avoid longs / watch for breakdown"
+                                  if ek == "BAD" else
+                                  "POSITIVE — company event, watch for breakout confirmation")})
+
+    return {"events": events[:12],
+            "jackpot": uniq(jackpot)[:10], "danger": uniq(danger)[:10],
             "market_crash": crash[:5], "results": uniq(results)[:8],
             "fresh_window_hours": MAX_AGE_HOURS}
