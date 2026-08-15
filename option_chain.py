@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 _lock = threading.Lock()
 _cache = {}          # sym -> {"ts":, "data":}
-CACHE_SEC = 180      # option chain 3 min-ku oru dhadava podhum
+CACHE_SEC = 420          # 7 min — chain moves slowly, saves API load      # option chain 3 min-ku oru dhadava podhum
 _master = {"rows": [], "ts": 0}
 
 SCRIP_MASTER_URL = ("https://margincalculator.angelbroking.com/OpenAPI_File/"
@@ -98,11 +98,11 @@ def get_chain(sym, spot, sc=None):
                 strike = float(x["strike"]) / 100.0
             except Exception:
                 continue
-            if abs(strike - spot) / spot <= 0.10:
+            if abs(strike - spot) / spot <= 0.06:
                 picked.append((strike, x))
         if not picked:
             return None
-        tokens = [x["token"] for _, x in picked][:100]
+        tokens = [x["token"] for _, x in picked][:60]
         fetched = []
         for grp in _chunks(tokens, 50):
             try:
