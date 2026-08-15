@@ -1,5 +1,5 @@
-/* ═══════════ KRT AI 9.6 — LIVE (Angel One + Option Chain + Index Setups) ═══════════ */
-const CONFIG = { DASHBOARD:"/api/dashboard", NEWS:"/api/news", REFRESH_MS:15000, MARKET_CLOSE:"15:30" };
+/* ═══════════ KRT AI 10.0 — LIVE ═══════════ */
+const CONFIG = { DASHBOARD:"/api/dashboard", NEWS:"/api/news", REFRESH_MS:20000, MARKET_CLOSE:"15:30" };
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n||0).toLocaleString('en-IN');
 const store = {
@@ -7,15 +7,21 @@ const store = {
   set(k,v){ try{ localStorage.setItem('krt_'+k, JSON.stringify(v)); }catch(e){} }
 };
 const rnd = n => Math.round(n*100)/100;
+const _sig={};
+function changed(key, val){
+  const h = JSON.stringify(val);
+  if(_sig[key]===h) return false;
+  _sig[key]=h; return true;
+}
 const volFmt = v => v>=1e7 ? (v/1e7).toFixed(1)+' Cr' : v>=1e5 ? (v/1e5).toFixed(1)+' L' : fmt(v);
 
 /* ---------- sound ---------- */
 let soundOn=false, audioCtx=null;
-$('sndBtn').onclick=()=>{ soundOn=!soundOn;
+$('sndBtn') && ($('sndBtn').onclick=()=>{ soundOn=!soundOn;
   $('sndBtn').textContent=soundOn?'🔊 Sound':'🔇 Sound';
   $('sndBtn').classList.toggle('on',soundOn);
   if(soundOn&&!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  if(soundOn)beep(); };
+  if(soundOn)beep(); });
 function beep(hi){ if(!soundOn||!audioCtx)return;
   const o=audioCtx.createOscillator(),g=audioCtx.createGain();
   o.type='sine';o.frequency.value=hi?520:880;g.gain.value=.08;o.connect(g);g.connect(audioCtx.destination);
@@ -43,14 +49,14 @@ function renderScore(s){
 renderScore(50);
 
 /* ---------- WhatsApp ---------- */
-$('waNum').value=store.get('waNum','');
-$('alSave').onclick=()=>{ store.set('waNum',$('waNum').value.trim());
-  $('alStatus').textContent='✅ Saved — alerts will open in WhatsApp.'; $('alStatus').className='status ok'; };
+if($('waNum')) $('waNum').value=store.get('waNum','');
+$('alSave') && ($('alSave').onclick=()=>{ store.set('waNum',$('waNum').value.trim());
+  $('alStatus').textContent='✅ Saved'; $('alStatus').className='status ok'; });
 function openWA(text){
   const num=store.get('waNum','').replace(/\D/g,'');
   window.open((num?`https://wa.me/${num}?text=`:`https://wa.me/?text=`)+encodeURIComponent(text),'_blank');
 }
-$('waTest').onclick=()=>openWA('✅ KRT AI Terminal — WhatsApp connected!');
+$('waTest') && ($('waTest').onclick=()=>openWA('✅ KRT AI Terminal — WhatsApp connected!'));
 
 /* ---------- message builders ---------- */
 function jpMsg(j){
@@ -65,13 +71,11 @@ let jackpots=[], dangers=[];
 function buildJackpots(stocks, brk, sectorRank){
   const pdh=new Set((brk.pdh||[]).map(r=>r.symbol));
   const pwh=new Set((brk.pwh||[]).map(r=>r.symbol));
-  const or5=new Set((brk.or5||[]).map(r=>r.symbol));
   jackpots = stocks.filter(r=>r.chg>=1 && (r.volume||0)>3e5)
     .map(r=>{
       const tags=[];
       if(pwh.has(r.symbol))tags.push('PWH Break');
       if(pdh.has(r.symbol))tags.push('PDH Break');
-      if(or5.has(r.symbol))tags.push('5min High Break');
       const secRank = sectorRank[r.sector]||99;
       if(secRank<=3)tags.push('Sector Top-3');
       if(gapUpSet.has(r.symbol))tags.push('Gap Up Open');
@@ -128,6 +132,7 @@ function buildDangers(stocks, brk, sectorRank, total){
   renderDangers();
 }
 function renderJackpots(){
+  if(!changed('jp', jackpots)) return;
   $('jpTag').textContent=jackpots.length+' CALLS';
   if(!jackpots.length){ $('jackpotList').innerHTML=`<div class="empty">No strong jackpot setup yet — waiting for momentum and breakout confirmation</div>`; return; }
   $('jackpotList').innerHTML=jackpots.map((j,i)=>`
@@ -146,6 +151,7 @@ function renderJackpots(){
     </div>`).join('');
 }
 function renderDangers(){
+  if(!changed('dg', dangers)) return;
   $('dgTag').textContent=dangers.length+' CALLS';
   if(!dangers.length){ $('dangerList').innerHTML=`<div class="empty">No danger setups — market stable</div>`; return; }
   $('dangerList').innerHTML=dangers.map((d,i)=>`
@@ -164,8 +170,8 @@ function renderDangers(){
 }
 function waJP(i){ openWA(jpMsg(jackpots[i])); }
 function waDG(i){ openWA(dgMsg(dangers[i])); }
-$('jpSendAll').onclick=()=>{ if(jackpots.length) openWA('🎰 KRT JACKPOT LIST\n\n'+jackpots.slice(0,6).map(j=>`${j.symbol} ₹${fmt(j.ltp)} ▲${j.chg}% | ${j.setup}\nE ${j.e} · SL ${j.sl} · T ${j.t1}/${j.t2}/${j.t3}`).join('\n\n')+'\n\n⚠ Educational only.'); };
-$('dgSendAll').onclick=()=>{ if(dangers.length) openWA('💀 KRT DANGER LIST\n\n'+dangers.slice(0,6).map(d=>`${d.symbol} ₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}% | ${d.setup}\nE ${d.e} · SL ${d.sl} · T ${d.t1}/${d.t2}`).join('\n\n')+'\n\n⚠ Educational only.'); };
+$('jpSendAll') && ($('jpSendAll').onclick=()=>{ if(jackpots.length) openWA('🎰 KRT JACKPOT LIST\n\n'+jackpots.slice(0,6).map(j=>`${j.symbol} ₹${fmt(j.ltp)} ▲${j.chg}% | ${j.setup}\nE ${j.e} · SL ${j.sl} · T ${j.t1}/${j.t2}/${j.t3}`).join('\n\n')+'\n\n⚠ Educational only.'); });
+$('dgSendAll') && ($('dgSendAll').onclick=()=>{ if(dangers.length) openWA('💀 KRT DANGER LIST\n\n'+dangers.slice(0,6).map(d=>`${d.symbol} ₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}% | ${d.setup}\nE ${d.e} · SL ${d.sl} · T ${d.t1}/${d.t2}`).join('\n\n')+'\n\n⚠ Educational only.'); });
 /* ---------- signal tracker ---------- */
 const STCLS={'LIVE':'st-live','T1 HIT':'st-t1','T2 HIT':'st-t1','TARGET COMPLETED':'st-done','SL HIT':'st-sl','EXPIRED':'st-exp'};
 function accBox(a,label){
@@ -191,6 +197,7 @@ function sigRow(s){
 }
 function renderTracker(t, indReady){
   if(!t)return;
+  if(!changed('trk', t)) return;
   if($('accBox')) $('accBox').innerHTML = accBox(t.today,"TODAY'S AI PERFORMANCE")+accBox(t.d7,'LAST 7 DAYS')+accBox(t.d30,'LAST 30 DAYS');
   if($('liveCalls')){
     $('liveTag').textContent=(t.live||[]).length+' RUNNING';
@@ -243,6 +250,7 @@ function setTier(t){ TIER=t; store.set('tier',t); renderTop(); }
 /* ---------- breadth ---------- */
 function renderBreadth(b){
   if(!b||!$('breadthBox'))return;
+  if(!changed('br', b)) return;
   $('breadthBox').innerHTML=`<div class="trk-grid">
     <div class="trk-cell"><div class="k">ADVANCING</div><div class="v up">${b.adv}</div></div>
     <div class="trk-cell"><div class="k">DECLINING</div><div class="v dn">${b.dec}</div></div>
@@ -251,17 +259,6 @@ function renderBreadth(b){
     <div class="trk-cell"><div class="k">BELOW VWAP</div><div class="v dn">${b.below_vwap!=null?b.below_vwap+'%':'—'}</div></div>
     <div class="trk-cell"><div class="k">BIAS</div><div class="v ${b.bias==='Bullish'?'up':b.bias==='Bearish'?'dn':'nt'}">${b.bias}</div></div>
   </div>`;
-}
-
-/* ---------- opening range breaks ---------- */
-function orRows(list, el, tag, label){
-  if(!$(el))return;
-  $(tag).textContent=(list||[]).length+' HITS';
-  $(el).innerHTML=(list||[]).length? list.map(r=>`<div class="brk-row">
-      <div><b>${r.symbol}</b> <span class="sec">${r.sector||''}</span></div>
-      <div class="brk-mid">${label} ${fmt(r.level)} ✅ · ₹${fmt(r.ltp)} <span class="up">▲${r.chg}%</span> · Vol ${volFmt(r.volume)}</div>
-      <span class="chip up">🟢 BUY</span></div>`).join('')
-    : `<div class="empty">No breaks yet — levels build from live candles after 9:20 AM</div>`;
 }
 
 /* ---------- market mood ---------- */
@@ -283,6 +280,7 @@ function renderMood(m){
 function renderOptions(stocks, sectorRank, total){
   const ce=[...stocks].filter(r=>r.chg>=1).sort((a,b)=>b.chg-a.chg).slice(0,6);
   const pe=[...stocks].filter(r=>r.chg<=-1).sort((a,b)=>a.chg-b.chg).slice(0,6);
+  if(!changed('opt', [ce,pe])) return;
   const line=(r,cls)=>{
     const rk=sectorRank[r.sector]||99, why=[cls==='up'?'trend up':'trend down'];
     if(cls==='up'&&rk<=3)why.push('strong sector');
@@ -306,6 +304,7 @@ function ckStocks(c){
 }
 function ckTime(c){ return c.triggered_at||c.at||c.time||''; }
 function renderChartink(list){
+  if(!changed('ck', list)) return;
   const all=(list||[]).slice().reverse();
   if(!$('ckOther'))return;
   $('ckOtherTag').textContent=all.length+' CALLS';
@@ -327,6 +326,7 @@ let zoneData=[];
 function renderZones(list){
   zoneData=list||[];
   if(!$('zoneBox'))return;
+  if(!changed('zones', list)) return;
   const must=zoneData.filter(z=>z.must).length;
   $('zoneTag').textContent=`${zoneData.length} ZONES${must?' · '+must+' MUST TRY':''}`;
   $('zoneBox').innerHTML = zoneData.length? zoneData.map((z,i)=>`
@@ -334,7 +334,7 @@ function renderZones(list){
       <div class="z-top">
         <b class="sym">${z.symbol}</b><span class="sec">${z.sector||''}</span>
         <span class="chip ${z.side==='BUY'?'up':'dn'}">${z.side}</span>
-        ${z.must?'<span class="must-tag">⭐ MUST TRY</span>':''}
+        ${z.must?`<span class="must-tag">⭐ MUST TRY · ${z.side==='BUY'?'LOOKING BIG JACKPOT — CE':'LOOKING BIG CRASH — PE'}</span>`:''}
         <span class="z-score">${z.score}<small>/100</small></span>
       </div>
       <div class="z-band">${z.side==='BUY'?'Buy zone':'Sell zone'}
@@ -349,7 +349,7 @@ function renderZones(list){
     </div>`).join('') : `<div class="empty">No clean zones right now — zones appear when trend, sector and VWAP line up</div>`;
 }
 function zMsg(z){
-  return `${z.side==='BUY'?'🎯 KRT BUY ZONE':'🎯 KRT SELL ZONE'}${z.must?' ⭐ MUST TRY':''}\n\n${z.symbol} (${z.sector})\nLTP ₹${fmt(z.ltp)} (${z.chg>=0?'+':''}${z.chg}%)\n\n${z.side==='BUY'?'Buy zone':'Sell zone'}: ${z.zone_lo} – ${z.zone_hi}\nSL: ${z.sl} (${z.sl_pct}%)\nT1: ${z.t1} (+${z.t1_pct}%)\nT2: ${z.t2} (+${z.t2_pct}%)\nT3: ${z.t3} (+${z.t3_pct}%)\n\nScore: ${z.score}/100\nWhy: ${z.why}\n${z.note}\n\n⚠ Educational only. Not investment advice.`;
+  return `${z.side==='BUY'?'🎯 KRT BUY ZONE':'🎯 KRT SELL ZONE'}${z.must?(z.side==='BUY'?' ⭐ MUST TRY · LOOKING BIG JACKPOT — CE':' ⭐ MUST TRY · LOOKING BIG CRASH — PE'):''}\n\n${z.symbol} (${z.sector})\nLTP ₹${fmt(z.ltp)} (${z.chg>=0?'+':''}${z.chg}%)\n\n${z.side==='BUY'?'Buy zone':'Sell zone'}: ${z.zone_lo} – ${z.zone_hi}\nSL: ${z.sl} (${z.sl_pct}%)\nT1: ${z.t1} (+${z.t1_pct}%)\nT2: ${z.t2} (+${z.t2_pct}%)\nT3: ${z.t3} (+${z.t3_pct}%)\n\nScore: ${z.score}/100\nWhy: ${z.why}\n${z.note}\n\n⚠ Educational only. Not investment advice.`;
 }
 function waZone(i){ if(zoneData[i]) openWA(zMsg(zoneData[i])); }
 $('zoneSend') && ($('zoneSend').onclick=()=>{
@@ -358,11 +358,65 @@ $('zoneSend') && ($('zoneSend').onclick=()=>{
     `${z.must?'⭐ ':''}${z.symbol} ${z.side} ${z.zone_lo}–${z.zone_hi} | SL ${z.sl} | T1 ${z.t1} (+${z.t1_pct}%) | ${z.score}/100`).join('\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+
+/* ---------- today's trade log ---------- */
+function renderTradeLog(t){
+  if(!$('tradeLog')||!t)return;
+  const rows=(t.history||[]).filter(s=>s.date===(t.today_date||s.date));
+  if(!changed('log', rows)) return;
+  const done=rows.filter(s=>s.status!=='LIVE').length;
+  $('logTag').textContent=`${rows.length} CALLS · ${done} CLOSED`;
+  const res=s=>{
+    if(s.status==='TARGET COMPLETED') return `<span class="res win">✅ ALL TARGETS HIT</span>`;
+    if(s.status==='T2 HIT')  return `<span class="res win">✅ TARGET 2 HIT</span>`;
+    if(s.status==='T1 HIT')  return `<span class="res win">✅ TARGET 1 HIT</span>`;
+    if(s.status==='SL HIT')  return `<span class="res loss">❌ SL HIT</span>`;
+    if(s.status==='EXPIRED') return `<span class="res exp">— NO HIT (expired)</span>`;
+    return `<span class="res run">⏳ RUNNING</span>`;
+  };
+  $('tradeLog').innerHTML = rows.length? rows.map(s=>`
+    <div class="log-row ${STCLS[s.status]||''}">
+      <span class="lg-time">${s.ts}</span>
+      <b class="lg-sym">${s.sym}</b>
+      <span class="chip ${s.side==='BUY'?'up':'dn'}">${s.side}</span>
+      ${s.source==='INDEX'?'<span class="lg-tag idx">INDEX OPTION</span>':'<span class="lg-tag stk">STOCK</span>'}
+      <span class="lg-lv">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}</span>
+      ${res(s)}
+      ${s.done_at?`<span class="lg-done">at ${s.done_at}</span>`:''}
+      ${s.pnl_pct!=null?`<span class="${s.pnl_pct>=0?'up':'dn'}">${s.pnl_pct>=0?'+':''}${s.pnl_pct}%</span>`:''}
+    </div>`).join('') : `<div class="empty">No calls given yet today — calls appear here with their result</div>`;
+}
+
+/* ---------- structure alerts ---------- */
+function renderStructure(list){
+  if(!$('strBox'))return;
+  if(!changed('str', list)) return;
+  const L=list||[];
+  $('strTag').textContent=L.length+' ALERTS';
+  $('strBox').innerHTML = L.length? L.map(x=>`
+    <div class="str-row ${x.dir==='up'?'sup':'sdn'}">
+      <b>${x.symbol}</b><span class="sec">${x.sector||''}</span>
+      <span class="str-ev ${x.dir==='up'?'up':'dn'}">${x.event}</span>
+      <span class="${x.chg>=0?'up':'dn'}">₹${fmt(x.ltp)} ${x.chg>=0?'▲':'▼'}${Math.abs(x.chg)}%</span>
+      <span class="str-note">${x.note}</span>
+      <span class="str-act">${x.action}</span>
+    </div>`).join('') : `<div class="empty">No breakout or breakdown yet — alerts fire when price clears the day high / low with volume</div>`;
+}
+
+/* ---------- live online count ---------- */
+const _vid = (()=>{ let v=store.get('vid',''); if(!v){ v=Math.random().toString(36).slice(2); store.set('vid',v);} return v; })();
+async function pingOnline(){
+  try{ const r=await fetch('/api/online?id='+_vid); const j=await r.json();
+    if($('onlineCount')) $('onlineCount').textContent = `👥 ${j.online} online`;
+  }catch(e){}
+}
+pingOnline(); setInterval(pingOnline, 45000);
 /* ---------- index option setups ---------- */
 let idxData=[];
 function renderIdxSetups(list){
   idxData=list||[];
   if(!$('idxSetupBox'))return;
+  if(!changed('idx', list)) return;
   const best=idxData.find(x=>x.side&&x.conf>=2);
   $('idxSetTag').textContent = best? `BEST: ${best.index} ${best.side} · ${best.score}/100` : 'NO CLEAR SETUP';
   $('idxSetupBox').innerHTML = idxData.length? idxData.map(x=>{
@@ -440,8 +494,9 @@ let codData=null;
 function renderCOD(c){
   codData=c;
   if(!$('codBox'))return;
+  if(!changed('cod', c)) return;
   if(!c){ $('codTag').textContent='WAITING';
-    $('codBox').innerHTML=`<div class="empty">Waiting for a high-conviction setup — appears when trend, sector and VWAP all align</div>`; return; }
+    $('codBox').innerHTML=`<div class="empty">Waiting for a high-conviction setup</div>`; return; }
   $('codTag').textContent=`${c.symbol} · ${c.score}/100`;
   $('codBox').innerHTML=`
     <div class="cod-head">
@@ -480,7 +535,7 @@ function renderCOD(c){
     <div class="cod-plan">${c.plan}</div>`;
 }
 function codMsg(c){
-  return `🔥 KRT CALL OF THE DAY\n\n${c.symbol} (${c.sector}) — ${c.side}\nScore ${c.score}/100 · ${c.view}\n\n${c.side==='BUY'?'Buy zone':'Sell zone'}: ${c.zone_lo} – ${c.zone_hi}\nLTP: ₹${c.ltp}\n\nSL: ${c.sl} (${c.sl_pct}%)\nT1: ${c.t1} (+${c.t1_pct}%)\nT2: ${c.t2} (+${c.t2_pct}%)\nT3: ${c.t3} (+${c.t3_pct}%)\n\nOPTIONS:\n${(c.strikes||[]).map(o=>`• ${c.symbol} ${o.strike} ${o.type} (${o.label})`).join('\n')}${c.chain?`\n\nOI: ${c.chain.writer} · PCR ${c.chain.pcr} · Support ${c.chain.support} · Resistance ${c.chain.resistance}`:''}\n\nWhy: ${c.why}\n${c.plan}\n\n⚠ Educational only. Not investment advice.`;
+  return `🔥 KRT CALL OF THE DAY\n\n${c.symbol} (${c.sector}) — ${c.side}\nScore ${c.score}/100 · ${c.view}\n\n${c.side==='BUY'?'Buy zone':'Sell zone'}: ${c.zone_lo} – ${c.zone_hi}\nLTP: ₹${c.ltp}\n\nSL: ${c.sl} (${c.sl_pct}%)\nT1: ${c.t1} (+${c.t1_pct}%)\nT2: ${c.t2} (+${c.t2_pct}%)\nT3: ${c.t3} (+${c.t3_pct}%)\n\nOPTIONS:\n${(c.strikes||[]).map(o=>`• ${c.symbol} ${o.strike} ${o.type} (${o.label})`).join('\n')}${c.chain?`\n\nOI: ${c.chain.writer} · PCR ${c.chain.pcr}`:''}\n\nWhy: ${c.why}\n${c.plan}\n\n⚠ Educational only. Not investment advice.`;
 }
 $('codSend') && ($('codSend').onclick=()=>{ if(codData) openWA(codMsg(codData)); });
 
@@ -490,6 +545,7 @@ function renderPreopen(po){
   preopenData = po || {up:[],down:[]};
   const up=preopenData.up||[], dn=preopenData.down||[];
   gapUpSet=new Set(up.map(x=>x.symbol)); gapDownSet=new Set(dn.map(x=>x.symbol));
+  if(!changed('po', po)) return;
   $('poTag').textContent = (up.length+dn.length)
       ? `${up.length}▲ / ${dn.length}▼ ${preopenData.final?'· FINAL':'· LIVE'}`
       : 'WAITING 9:00 AM';
@@ -502,17 +558,18 @@ function renderPreopen(po){
   $('gapDown').innerHTML = dn.length? dn.map((x,i)=>row(x,i,'dn')).join('')
       : `<div class="empty">No gap-down yet — fills after 9:00 AM</div>`;
 }
-$('poSend').onclick=()=>{
+$('poSend') && ($('poSend').onclick=()=>{
   const up=preopenData.up||[], dn=preopenData.down||[];
   if(!up.length && !dn.length) return;
   openWA('🌅 KRT PRE-OPEN GAP LIST'+(preopenData.final?' (FINAL)':' (LIVE)')+'\n\n▲ GAP UP\n'+
     up.slice(0,8).map(x=>`${x.symbol} ₹${fmt(x.price)} ▲${x.gap}%`).join('\n')+
     '\n\n▼ GAP DOWN\n'+dn.slice(0,8).map(x=>`${x.symbol} ₹${fmt(x.price)} ▼${Math.abs(x.gap)}%`).join('\n')+
     '\n\n⚠ Educational only. Not investment advice.');
-};
+});
 
 /* ---------- sectors ---------- */
 function renderSectors(sectors){
+  if(!changed('sec', sectors)) return;
   const strong=sectors.slice(0,6), weak=[...sectors].reverse().slice(0,6);
   $('strongSectors').innerHTML=strong.map(s=>`
     <div class="sec-row">
@@ -528,6 +585,7 @@ function renderSectors(sectors){
 
 /* ---------- tables ---------- */
 function stockRows(arr, tb){
+  if(!changed('tbl'+tb, arr)) return;
   $(tb).innerHTML=arr.map((r,i)=>{
     const up=r.chg>=0;
     return `<tr><td class="rank">${String(i+1).padStart(2,'0')}</td><td><b>${r.symbol}</b></td>
@@ -573,6 +631,7 @@ function renderAlerts(alerts, chartink){
 /* ---------- news ---------- */
 const TAGCLS={'CRASH RISK':'dn','COMPANY RISK':'dn','NEGATIVE':'dn','ORDER WIN':'up','STRONG POSITIVE':'up','POSITIVE':'up','RESULTS':'nt','NEUTRAL':'nt'};
 function renderNews(items){
+  if(!changed('news', items)) return;
   if(!items||!items.length){ $('newsList').innerHTML=`<div class="empty">No fresh market news right now</div>`; return; }
   $('newsList').innerHTML=items.map(n=>`
     <div class="news-item"><div class="head">
@@ -582,6 +641,14 @@ function renderNews(items){
       <div class="ai-sum">🕒 ${n.ago||''} · ${n.source}${n.stocks&&n.stocks.length?' · '+n.stocks.join(', '):''}</div></div>`).join('');
 }
 function renderNewsSignals(sig){
+  if(!changed('nsig', sig)) return;
+  ((sig&&sig.events)||[]).forEach(e=>{
+    const k='ev:'+e.symbol+e.headline.slice(0,30); if(seen.has(k))return; seen.add(k);
+    pushAlert({symbol:e.symbol, side:e.kind==='BAD'?'SELL':'BUY',
+      type:e.kind==='BAD'?'DANGER':'BUY',
+      reason:`<b>${e.kind==='BAD'?'⚠ COMPANY EVENT':'✅ COMPANY EVENT'}</b> — ${e.headline}`,
+      detail:`${e.action} · impact ${e.impact}/10 · ${e.ago} · ${e.source}`});
+  });
   const jp=(sig&&sig.jackpot)||[], dg=(sig&&sig.danger)||[], cr=(sig&&sig.market_crash)||[];
   $('newsJackpot').innerHTML = jp.length? jp.map(n=>`
     <div class="sig-card bull slim">
@@ -594,6 +661,7 @@ function renderNewsSignals(sig){
     <div class="sig-card bear slim">
       <div class="sig-top"><b class="sym dn">⚠ MARKET CRASH RISK</b><span class="impact">${c.impact}/10 · ${c.ago||''}</span></div>
       <div class="nh">${c.headline}</div>
+      ${c.affect?`<div class="aff aff-${c.affect.level}">IMPACT ${c.affect.level} · ${c.affect.note}${c.affect.focus!=='NONE'?' · FOCUS '+c.affect.focus:''}</div>`:''}
       <div class="sig-foot"><span class="dn">${c.action}</span></div>
     </div>`).join('') + dg.map(n=>`
     <div class="sig-card bear slim">
@@ -611,10 +679,10 @@ function renderNewsSignals(sig){
 }
 
 /* ---------- chartink panel ---------- */
-$('ckUrl').value=store.get('ckUrl','');
-if(store.get('ckUrl','')) $('ckStatus').textContent='✅ Saved';
-$('ckSave').onclick=()=>{ store.set('ckUrl',$('ckUrl').value.trim());
-  $('ckStatus').textContent='✅ Saved'; $('ckStatus').className='status ok'; };
+if($('ckUrl')) $('ckUrl').value=store.get('ckUrl','');
+if($('ckStatus') && store.get('ckUrl','')) $('ckStatus').textContent='✅ Saved';
+$('ckSave') && ($('ckSave').onclick=()=>{ store.set('ckUrl',$('ckUrl').value.trim());
+  $('ckStatus').textContent='✅ Saved'; $('ckStatus').className='status ok'; });
 
 /* ═══════════ MAIN LOOP ═══════════ */
 async function pull(u){ try{ const r=await fetch(u); return r.ok? await r.json():null; }catch(e){ return null; } }
@@ -636,12 +704,20 @@ async function refresh(){
     window.__last=uniq;
     renderStatus(d.status);
     renderBreadth(d.breadth);
-    orRows(d.or5,'or5List','or5Tag','5-min High');
     renderMood(d.mood);
     renderTracker(d.tracker, d.ind_ready);
     renderOptions(uniq, rank, sectors.length);
     renderSession(d.session, d.index_bias);
     renderIdxSetups(d.index_setups);
+    renderStructure(d.structure);
+    renderTradeLog(d.tracker);
+    (d.structure||[]).forEach(x=>{
+      const k='st:'+x.symbol+x.event; if(seen.has(k))return; seen.add(k);
+      pushAlert({symbol:x.symbol, side:x.dir==='up'?'BUY':'SELL',
+        type:x.dir==='up'?'BUY':'DANGER',
+        reason:`<b>${x.event}</b> — ${x.note}`,
+        detail:`₹${fmt(x.ltp)} (${x.chg>=0?'+':''}${x.chg}%) · ${x.sector} · ${x.action}`});
+    });
     renderCOD(d.call_day);
     renderZones(d.zones);
     renderPreopen(d.preopen);
@@ -660,8 +736,11 @@ async function refresh(){
     $('gTag').textContent = live?'LIVE · ANGEL ONE':'DEMO MODE';
     $('lTag').textContent = live?'LIVE · ANGEL ONE':'DEMO MODE';
   }
+}
+async function refreshNews(){
   const n=await pull(CONFIG.NEWS);
   if(n && !n.error){ renderNews(n.items); renderNewsSignals(n.signals); }
 }
-refresh();
+refresh(); refreshNews();
 setInterval(refresh, CONFIG.REFRESH_MS);
+setInterval(refreshNews, 90000);
