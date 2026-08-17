@@ -12,6 +12,7 @@ import os, time, math, random, threading, json
 import urllib.request
 import indicators as IND
 import option_chain as OC
+import confluence as CONF
 from datetime import datetime, timedelta
 
 # ───────────────────────── INDICES (fixed tokens) ─────────────────────────
@@ -103,7 +104,7 @@ _tokens = {}          # symbol -> token
 _tokens_ready = False
 _cache = {"data": None, "ts": 0, "mode": "demo"}
 _levels = {"pdh": {}, "pdl": {}, "pwh": {}, "pwl": {}, "pmh": {}, "pml": {},
-           "orh": {}, "day": "", "or_day": ""}
+           "avgvol": {}, "orh": {}, "day": "", "or_day": ""}
 # live option premium map: {"FINNIFTY 26150 CE": 352.5, ...} — tracker idha use pannum
 _opt_px = {}
 _struct_seen = {}          # {"BHEL|BREAKOUT": "13:28"} — alert first-seen time
@@ -297,8 +298,10 @@ def _yf_levels(sym):
     pwl = min(x[2] for x in past5)
     pmh = max(x[1] for x in rows)          # 1-month high
     pml = min(x[2] for x in rows)          # 1-month low
+    vols = [x[3] for x in rows[-10:] if len(x) > 3 and x[3]]
+    avgv = (sum(vols) / len(vols)) if vols else None
     return (round(pdh, 2), round(pdl, 2), round(pwh, 2),
-            round(pwl, 2), round(pmh, 2), round(pml, 2))
+            round(pwl, 2), round(pmh, 2), round(pml, 2), avgv)
 
 
 def _yf_opening_high(sym):
@@ -327,7 +330,10 @@ def _warm_levels_yahoo():
             v = _yf_levels(sym)
             if v:
                 (_levels["pdh"][sym], _levels["pdl"][sym], _levels["pwh"][sym],
-                 _levels["pwl"][sym], _levels["pmh"][sym], _levels["pml"][sym]) = v
+                 _levels["pwl"][sym], _levels["pmh"][sym], _levels["pml"][sym],
+                 _avgv) = v
+                if _avgv:
+                    _levels["avgvol"][sym] = _avgv
                 ok += 1
         except Exception as ex:
             if not _diag["sample_error"]:
@@ -424,6 +430,9 @@ def _warm_levels():
                 if done:
                     _levels["pmh"][sym] = round(max(float(x[2]) for x in done), 2)
                     _levels["pml"][sym] = round(min(float(x[3]) for x in done), 2)
+                    _vv = [float(x[5]) for x in done[-10:] if len(x) > 5 and x[5]]
+                    if _vv:
+                        _levels["avgvol"][sym] = sum(_vv) / len(_vv)
             except Exception as ex:
                 if not _diag["sample_error"]:
                     _diag["sample_error"] = f"{sym}: {str(ex)[:200]}"
@@ -862,6 +871,17 @@ def _build_dashboard_inner():
         print("zone error:", e)
 
     # ── STRUCTURE ALERTS: breakout / breakdown / support break ──
+    # ── CONFLUENCE ENGINE (👑 super setups) ──
+    confl = []
+    try:
+        import news as NEWS
+        _nmap = NEWS.stock_sentiment()
+        _cmin = _ist_now().hour * 60 + _ist_now().minute
+        confl = CONF.build(stocks, sectors, _levels, _nmap,
+                           dict(IND.CANDLES), _cmin)
+    except Exception as e:
+        print("confluence error:", e)
+
     structure = []
     try:
         _now_hm = _ist_now().strftime("%H:%M")
@@ -1110,7 +1130,7 @@ def _build_dashboard_inner():
     or5.sort(key=lambda x: -x["chg"]); or15.sort(key=lambda x: -x["chg"])
 
     return {
-        "status": mstat, "breadth": breadth,
+        "status": mstat, "breadth": breadth, "confluence": confl,
         "or5": or5[:12], "or15": or15[:12],
         "mode": mode, "indices": indices, "gainers": gainers, "losers": losers,
         "volume": by_vol, "alerts": alerts, "sectors": sectors,
