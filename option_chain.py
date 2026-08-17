@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 _lock = threading.Lock()
 _cache = {}          # sym -> {"ts":, "data":}
 CACHE_SEC = 420          # 7 min — chain moves slowly, saves API load      # option chain 3 min-ku oru dhadava podhum
-_master = {"rows": [], "ts": 0}
+_master = {"rows": [], "ts": 0, "loading": False}
 
 SCRIP_MASTER_URL = ("https://margincalculator.angelbroking.com/OpenAPI_File/"
                     "files/OpenAPIScripMaster.json")
@@ -32,9 +32,18 @@ def _has_creds():
 
 
 # ───────── option instrument master ─────────
-def _load_master():
+def _load_master(blocking=False):
+    """Master file ~150MB — request-kulla download panna dashboard hang aagum.
+    Default-a non-blocking: background thread download pannum, request udane
+    return aagum (chain andha poll-la illa, adutha poll-la varum)."""
     if _master["rows"] and time.time() - _master["ts"] < 86400:
         return _master["rows"]
+    if not blocking:
+        if not _master["loading"]:
+            _master["loading"] = True
+            threading.Thread(target=lambda: _load_master(blocking=True),
+                             daemon=True).start()
+        return _master["rows"]          # [] until the download finishes
     try:
         req = urllib.request.Request(SCRIP_MASTER_URL, headers={"User-Agent": "KRT"})
         with urllib.request.urlopen(req, timeout=60) as r:
@@ -45,6 +54,7 @@ def _load_master():
         print(f"[optchain] master loaded: {len(opts)} option contracts")
     except Exception as e:
         print("[optchain] master error:", e)
+    _master["loading"] = False
     return _master["rows"]
 
 
