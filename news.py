@@ -378,3 +378,21 @@ def get_news_signals():
             "jackpot": uniq(jackpot)[:10], "danger": uniq(danger)[:10],
             "market_crash": crash[:5], "results": uniq(results)[:8],
             "fresh_window_hours": MAX_AGE_HOURS}
+
+
+def stock_sentiment():
+    """{"BHEL": +1, "IDEA": -1} — confluence engine idha news confirmation-a
+    use pannum. Sirandha/mosamaana news irundha mattum entry."""
+    out = {}
+    try:
+        for n in (get_news() or {}).get("items", []):
+            if n.get("impact", 0) < 7 or n.get("age_h", 99) > 6:
+                continue
+            v = 1 if n.get("tag") in ("ORDER WIN", "STRONG POSITIVE", "POSITIVE") \
+                else -1 if n.get("tag") in ("CRASH RISK", "COMPANY RISK", "NEGATIVE") else 0
+            for sym in (n.get("stocks") or []):
+                if v and sym != "MARKET":
+                    out[sym] = v
+    except Exception as e:
+        print("[news] sentiment error:", e)
+    return out
