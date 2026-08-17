@@ -587,7 +587,7 @@ def _build_dashboard_inner():
 
     # ── self-built candles + real indicators ──
     try:
-        IND.feed(stocks + indices)
+        IND.feed(stocks + indices, live=(mode == "live"))
         IND.enrich(stocks)
         IND.enrich(indices)
         IND.update_tracker({r["symbol"]: r["ltp"] for r in stocks})
@@ -747,7 +747,7 @@ def _build_dashboard_inner():
                 z_hi = round(min(px, max(lo, vwap or lo) * 1.006), 2)
                 if z_hi <= z_lo:
                     z_lo, z_hi = round(px * 0.994, 2), round(px * 1.001, 2)
-                atr = max(atr, px * 0.006, rng * 0.30)
+                atr = min(max(atr, px * 0.006, rng * 0.30), px * 0.025)
                 sl = round(z_lo - 1.2 * atr, 2)
                 t1 = round(z_hi + 1.5 * atr, 2)
                 t2 = round(z_hi + 2.5 * atr, 2)
@@ -784,7 +784,7 @@ def _build_dashboard_inner():
                 z_lo = round(max(px, min(hi, vwap or hi) * 0.994), 2)
                 if z_hi <= z_lo:
                     z_lo, z_hi = round(px * 0.999, 2), round(px * 1.006, 2)
-                atr = max(atr, px * 0.006, rng * 0.30)
+                atr = min(max(atr, px * 0.006, rng * 0.30), px * 0.025)
                 sl = round(z_hi + 1.2 * atr, 2)
                 t1 = round(z_lo - 1.5 * atr, 2)
                 t2 = round(z_lo - 2.5 * atr, 2)
