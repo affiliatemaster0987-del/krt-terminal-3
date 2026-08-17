@@ -481,3 +481,8 @@ td.sec{font-size:.6rem;color:var(--dim)}
 
 /* squawk / breaking news chip */
 .chip.brk{color:#0d1119;background:var(--amber);border-color:var(--amber);font-weight:800}
+
+/* trade-log hit timeline + alert timestamps */
+.hit-t{font-style:normal;opacity:.8;font-size:.9em}
+.lg-line{flex-basis:100%;font-size:.62rem;color:var(--dim);letter-spacing:.02em;margin-top:2px}
+.str-at{font-size:.62rem;color:var(--dim);min-width:38px}
