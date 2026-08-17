@@ -486,3 +486,26 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .hit-t{font-style:normal;opacity:.8;font-size:.9em}
 .lg-line{flex-basis:100%;font-size:.62rem;color:var(--dim);letter-spacing:.02em;margin-top:2px}
 .str-at{font-size:.62rem;color:var(--dim);min-width:38px}
+
+/* 👑 confluence cards */
+.cf-card{border:1px solid var(--line);border-left:3px solid var(--dim);border-radius:12px;
+  padding:12px;margin-bottom:10px;background:rgba(255,255,255,.015)}
+.cf-card.cfb{border-left-color:var(--green)} .cf-card.cfs{border-left-color:var(--red)}
+.cf-card.cfsuper{border:1px solid var(--amber);box-shadow:0 0 22px rgba(245,184,64,.16)}
+.cf-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.cf-crown{background:var(--amber);color:#0d1119;font-weight:800;font-size:.6rem;
+  padding:3px 9px;border-radius:99px;letter-spacing:.06em}
+.cf-setup{font-size:.68rem;font-weight:700;letter-spacing:.03em}
+.cf-pts{margin-left:auto;font-size:1.05rem;font-weight:800;color:var(--amber)}
+.cf-pts small{font-size:.55rem;opacity:.6}
+.cf-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.cf-head .sym{font-size:1.05rem}
+.cf-score{margin-left:auto;font-weight:800;color:var(--green)}
+.cf-score small{font-size:.55rem;opacity:.6}
+.cf-why{font-size:.66rem;color:var(--dim);margin-bottom:7px}
+.cf-checks{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+.cf-ok{font-size:.6rem;padding:3px 7px;border-radius:6px;
+  background:rgba(22,214,122,.1);color:var(--green);border:1px solid rgba(22,214,122,.25)}
+.cf-no{font-size:.6rem;padding:3px 7px;border-radius:6px;color:var(--dim);
+  border:1px solid var(--line);opacity:.55}
+.cf-avoid{font-size:.62rem;color:var(--red);margin:7px 0;letter-spacing:.02em}
