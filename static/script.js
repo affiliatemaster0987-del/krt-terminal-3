@@ -1,4 +1,4 @@
-/* ═══════════ KRT AI 10.0 — LIVE ═══════════ */
+/* ═══════════ KRT AI 3.0 — LIVE (Angel One) ═══════════ */
 const CONFIG = { DASHBOARD:"/api/dashboard", NEWS:"/api/news", REFRESH_MS:20000, MARKET_CLOSE:"15:30" };
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n||0).toLocaleString('en-IN');
@@ -7,6 +7,7 @@ const store = {
   set(k,v){ try{ localStorage.setItem('krt_'+k, JSON.stringify(v)); }catch(e){} }
 };
 const rnd = n => Math.round(n*100)/100;
+// skip re-render when the payload for a section has not changed (big CPU saver)
 const _sig={};
 function changed(key, val){
   const h = JSON.stringify(val);
@@ -28,7 +29,7 @@ function beep(hi){ if(!soundOn||!audioCtx)return;
   o.start();o.frequency.exponentialRampToValueAtTime(hi?300:1320,audioCtx.currentTime+.12);
   g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+.3);o.stop(audioCtx.currentTime+.32); }
 
-/* ---------- market status ---------- */
+/* ---------- countdown ---------- */
 function renderStatus(st){
   if(!st||!$('mktStatus'))return;
   $('mktStatus').className='mkt-status s-'+st.state;
@@ -71,11 +72,13 @@ let jackpots=[], dangers=[];
 function buildJackpots(stocks, brk, sectorRank){
   const pdh=new Set((brk.pdh||[]).map(r=>r.symbol));
   const pwh=new Set((brk.pwh||[]).map(r=>r.symbol));
+  const or5=new Set((brk.or5||[]).map(r=>r.symbol));
   jackpots = stocks.filter(r=>r.chg>=1 && (r.volume||0)>3e5)
     .map(r=>{
       const tags=[];
       if(pwh.has(r.symbol))tags.push('PWH Break');
       if(pdh.has(r.symbol))tags.push('PDH Break');
+      if(or5.has(r.symbol))tags.push('5min High Break');
       const secRank = sectorRank[r.sector]||99;
       if(secRank<=3)tags.push('Sector Top-3');
       if(gapUpSet.has(r.symbol))tags.push('Gap Up Open');
@@ -85,7 +88,7 @@ function buildJackpots(stocks, brk, sectorRank){
       if(ind.ema9&&ind.ema21&&ind.ema9>ind.ema21){tags.push('EMA 9>21');tech+=8;}
       if(ind.vwap&&r.ltp>ind.vwap){tags.push('Above VWAP');tech+=8;}
       if(ind.adx&&ind.adx>=25){tags.push('ADX '+ind.adx);tech+=8;}
-      if(ind.htf&&ind.htf.align===1){tags.push('HTF aligned');tech+=10;}
+      if(ind.pdh&&r.ltp>ind.pdh){tags.push('PDH Break');tech+=10;}
       let score = 40 + Math.min(20,Math.round(r.chg*3)) + tags.length*4 + tech;
       if((r.volume||0)>1e7)score+=6;
       score=Math.min(99,score);
@@ -93,10 +96,10 @@ function buildJackpots(stocks, brk, sectorRank){
       return {...r, tags, score, ind, atrMode:useATR,
         setup: tags.length?tags.join(' + '):'Momentum',
         e:rnd(r.ltp),
-        sl: useATR? r.sl_long : rnd(r.ltp*0.994),
-        t1: useATR? r.t1_long : rnd(r.ltp*1.008),
-        t2: useATR? r.t2_long : rnd(r.ltp*1.014),
-        t3: useATR? r.t3_long : rnd(r.ltp*1.022)};
+        sl: useATR? r.sl_long : rnd(Math.max(r.low||r.ltp*0.99, r.ltp*0.99)),
+        t1: useATR? r.t1_long : rnd(r.ltp*1.01),
+        t2: useATR? r.t2_long : rnd(r.ltp*1.02),
+        t3: useATR? r.t3_long : rnd(r.ltp*1.035)};
     })
     .filter(x=>x.score>=70 && x.tags.length>=1)
     .sort((a,b)=>b.score-a.score).slice(0,12);
@@ -117,24 +120,23 @@ function buildDangers(stocks, brk, sectorRank, total){
       if(ind.ema9&&ind.ema21&&ind.ema9<ind.ema21){tags.push('EMA 9<21');tech+=8;}
       if(ind.vwap&&r.ltp<ind.vwap){tags.push('Below VWAP');tech+=8;}
       if(ind.adx&&ind.adx>=25){tags.push('ADX '+ind.adx);tech+=8;}
-      if(ind.htf&&ind.htf.align===-1){tags.push('HTF aligned');tech+=10;}
+      if(ind.pdl&&r.ltp<ind.pdl){tags.push('PDL Break');tech+=10;}
       let score=40+Math.min(22,Math.round(Math.abs(r.chg)*3))+tags.length*4+tech;
       score=Math.min(99,score);
       const useATR = r.sl_short!=null;
       return {...r, tags, score, ind, atrMode:useATR,
         setup: tags.length?tags.join(' + '):'Weak momentum',
         e:rnd(r.ltp),
-        sl: useATR? r.sl_short : rnd(r.ltp*1.006),
-        t1: useATR? r.t1_short : rnd(r.ltp*0.992),
-        t2: useATR? r.t2_short : rnd(r.ltp*0.986)};
+        sl: useATR? r.sl_short : rnd(r.ltp*1.01),
+        t1: useATR? r.t1_short : rnd(r.ltp*0.99),
+        t2: useATR? r.t2_short : rnd(r.ltp*0.98)};
     })
     .sort((a,b)=>b.score-a.score).slice(0,12);
   renderDangers();
 }
 function renderJackpots(){
-  if(!changed('jp', jackpots)) return;
   $('jpTag').textContent=jackpots.length+' CALLS';
-  if(!jackpots.length){ $('jackpotList').innerHTML=`<div class="empty">No strong jackpot setup yet — waiting for momentum and breakout confirmation</div>`; return; }
+  if(!jackpots.length){ $('jackpotList').innerHTML=`<div class="empty">No strong jackpot setup yet — waiting for momentum + breakout confirmation</div>`; return; }
   $('jackpotList').innerHTML=jackpots.map((j,i)=>`
     <div class="sig-card bull">
       <div class="sig-top"><b class="sym">${j.symbol}</b>
@@ -142,18 +144,15 @@ function renderJackpots(){
         <span class="up">₹${fmt(j.ltp)} ▲${j.chg}%</span>
         <span class="sc">${j.score}<small>/100</small></span></div>
       <div class="sig-tags">${j.tags.map(t=>`<span class="t-chip">✅ ${t}</span>`).join('')||'<span class="t-chip dim">Momentum</span>'}</div>
-      <div class="sig-lv"><span class="e">E ${j.e}</span><span class="s">SL ${j.sl}<i>${((j.e-j.sl)/j.e*100).toFixed(2)}%</i></span>
-        <span class="t">T1 ${j.t1}<i>+${((j.t1-j.e)/j.e*100).toFixed(2)}%</i></span>
-        <span class="t">T2 ${j.t2}<i>+${((j.t2-j.e)/j.e*100).toFixed(2)}%</i></span>
-        <span class="t">T3 ${j.t3}<i>+${((j.t3-j.e)/j.e*100).toFixed(2)}%</i></span></div>
-      <div class="sig-foot"><span>Vol ${volFmt(j.volume)} · H ${fmt(j.high)} / L ${fmt(j.low)}</span>
+      <div class="sig-lv"><span class="e">E ${j.e}</span><span class="s">SL ${j.sl}</span>
+        <span class="t">T1 ${j.t1}</span><span class="t">T2 ${j.t2}</span><span class="t">T3 ${j.t3}</span></div>
+      <div class="sig-foot"><span>Vol ${volFmt(j.volume)} · H ${fmt(j.high)} / L ${fmt(j.low)}${j.atrMode?' · <b class="atrb">ATR levels</b>':' · fixed % levels'}</span>
         <button class="btn wa mini" onclick="waJP(${i})">🟢 WA</button></div>
     </div>`).join('');
 }
 function renderDangers(){
-  if(!changed('dg', dangers)) return;
   $('dgTag').textContent=dangers.length+' CALLS';
-  if(!dangers.length){ $('dangerList').innerHTML=`<div class="empty">No danger setups — market stable</div>`; return; }
+  if(!dangers.length){ $('dangerList').innerHTML=`<div class="empty">No danger setups — market stable 👍</div>`; return; }
   $('dangerList').innerHTML=dangers.map((d,i)=>`
     <div class="sig-card bear">
       <div class="sig-top"><b class="sym">${d.symbol}</b>
@@ -161,10 +160,9 @@ function renderDangers(){
         <span class="dn">₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}%</span>
         <span class="sc dnsc">${d.score}<small>/100</small></span></div>
       <div class="sig-tags">${d.tags.map(t=>`<span class="t-chip bad">⚠ ${t}</span>`).join('')||'<span class="t-chip dim">Weak</span>'}</div>
-      <div class="sig-lv"><span class="e">E ${d.e}</span><span class="s">SL ${d.sl}<i>${((d.sl-d.e)/d.e*100).toFixed(2)}%</i></span>
-        <span class="t">T1 ${d.t1}<i>+${((d.e-d.t1)/d.e*100).toFixed(2)}%</i></span>
-        <span class="t">T2 ${d.t2}<i>+${((d.e-d.t2)/d.e*100).toFixed(2)}%</i></span></div>
-      <div class="sig-foot"><span>Vol ${volFmt(d.volume)} · H ${fmt(d.high)} / L ${fmt(d.low)}</span>
+      <div class="sig-lv"><span class="e">E ${d.e}</span><span class="s">SL ${d.sl}</span>
+        <span class="t">T1 ${d.t1}</span><span class="t">T2 ${d.t2}</span></div>
+      <div class="sig-foot"><span>Vol ${volFmt(d.volume)} · H ${fmt(d.high)} / L ${fmt(d.low)}${d.atrMode?' · <b class="atrb">ATR levels</b>':' · fixed % levels'}</span>
         <button class="btn wa mini" onclick="waDG(${i})">🟢 WA</button></div>
     </div>`).join('');
 }
@@ -172,7 +170,8 @@ function waJP(i){ openWA(jpMsg(jackpots[i])); }
 function waDG(i){ openWA(dgMsg(dangers[i])); }
 $('jpSendAll') && ($('jpSendAll').onclick=()=>{ if(jackpots.length) openWA('🎰 KRT JACKPOT LIST\n\n'+jackpots.slice(0,6).map(j=>`${j.symbol} ₹${fmt(j.ltp)} ▲${j.chg}% | ${j.setup}\nE ${j.e} · SL ${j.sl} · T ${j.t1}/${j.t2}/${j.t3}`).join('\n\n')+'\n\n⚠ Educational only.'); });
 $('dgSendAll') && ($('dgSendAll').onclick=()=>{ if(dangers.length) openWA('💀 KRT DANGER LIST\n\n'+dangers.slice(0,6).map(d=>`${d.symbol} ₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}% | ${d.setup}\nE ${d.e} · SL ${d.sl} · T ${d.t1}/${d.t2}`).join('\n\n')+'\n\n⚠ Educational only.'); });
-/* ---------- signal tracker ---------- */
+
+/* ---------- signal tracker (v5) ---------- */
 const STCLS={'LIVE':'st-live','T1 HIT':'st-t1','T2 HIT':'st-t1','TARGET COMPLETED':'st-done','SL HIT':'st-sl','EXPIRED':'st-exp'};
 function accBox(a,label){
   const p=v=>v==null?'—':v+'%';
@@ -197,7 +196,6 @@ function sigRow(s){
 }
 function renderTracker(t, indReady){
   if(!t)return;
-  if(!changed('trk', t)) return;
   if($('accBox')) $('accBox').innerHTML = accBox(t.today,"TODAY'S AI PERFORMANCE")+accBox(t.d7,'LAST 7 DAYS')+accBox(t.d30,'LAST 30 DAYS');
   if($('liveCalls')){
     $('liveTag').textContent=(t.live||[]).length+' RUNNING';
@@ -207,7 +205,10 @@ function renderTracker(t, indReady){
     $('doneTag').textContent=(t.completed||[]).length+' TODAY';
     $('doneCalls').innerHTML=(t.completed||[]).map(sigRow).join('')||'<div class="empty">No completed calls yet today</div>';
   }
-  if($('topCalls')){ window.__top = t.top || []; renderTop(); }
+  if($('topCalls')){
+    window.__top = t.top || [];
+    renderTop();
+  }
   if($('histBox')) $('histBox').innerHTML=(t.history||[]).slice(0,40).map(sigRow).join('')||'<div class="empty">History builds up as signals fire</div>';
   if($('trkTag')&&indReady!=null) $('trkTag').textContent=indReady+' STOCKS INDICATOR-READY';
 }
@@ -233,24 +234,23 @@ function renderTop(){
       <span class="chip ${s.side==='BUY'?'up':'dn'}">${s.side}</span>
       <span class="tier">${tierName(s.score)}</span>
       <span class="tm">${s.ts}</span>
-      <span class="lvmini">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}${s.t1_pct?' (+'+s.t1_pct+'%)':''}</span>
+      <span class="lvmini">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}</span>
       <span class="sc2">${s.score}</span>
       <span class="stt">${s.status}</span>
       ${s.pnl_pct!=null?`<span class="${s.pnl_pct>=0?'up':'dn'}">${s.pnl_pct>=0?'+':''}${s.pnl_pct}%</span>`:''}
       <button class="btn wa mini" onclick="waTop('${s.sym}')">🟢 WA</button>
     </div>`).join('')
-    : `<div class="empty">No ${TIER}+ score calls yet today</div>`;
+    : `<div class="empty">No ${TIER}+ score calls yet today — signals start after 9:35 AM</div>`;
 }
 function waTop(sym){
   const s=(window.__top||[]).find(x=>x.sym===sym); if(!s)return;
-  openWA(`${s.side==='BUY'?'🚀':'⚠'} KRT AI ${s.side} ALERT\n\n${s.sym}  [${tierName(s.score)} ${s.score}/100]\n\nEntry: ₹${s.entry}\nSL: ₹${s.sl}${s.sl_pct?` (${s.sl_pct}%)`:''}\nT1: ₹${s.t1}${s.t1_pct?` (+${s.t1_pct}%)`:''}\nT2: ₹${s.t2}${s.t2_pct?` (+${s.t2_pct}%)`:''}${s.t3?`\nT3: ₹${s.t3}${s.t3_pct?` (+${s.t3_pct}%)`:''}`:''}\n\nReason: ${s.setup||'-'}\nTime: ${s.ts}\nStatus: ${s.status}\n\n⚠ Educational only. Not investment advice.`);
+  openWA(`${s.side==='BUY'?'🚀':'⚠'} KRT AI ${s.side} ALERT\n\n${s.sym}  [${tierName(s.score)} ${s.score}/100]\n\nEntry: ₹${s.entry}\nSL: ₹${s.sl}\nT1: ₹${s.t1}\nT2: ₹${s.t2}${s.t3?`\nT3: ₹${s.t3}`:''}\n\nReason: ${s.setup||'-'}\nTime: ${s.ts}\nStatus: ${s.status}\n\n⚠ Educational only. Not investment advice.`);
 }
 function setTier(t){ TIER=t; store.set('tier',t); renderTop(); }
 
 /* ---------- breadth ---------- */
 function renderBreadth(b){
   if(!b||!$('breadthBox'))return;
-  if(!changed('br', b)) return;
   $('breadthBox').innerHTML=`<div class="trk-grid">
     <div class="trk-cell"><div class="k">ADVANCING</div><div class="v up">${b.adv}</div></div>
     <div class="trk-cell"><div class="k">DECLINING</div><div class="v dn">${b.dec}</div></div>
@@ -259,6 +259,16 @@ function renderBreadth(b){
     <div class="trk-cell"><div class="k">BELOW VWAP</div><div class="v dn">${b.below_vwap!=null?b.below_vwap+'%':'—'}</div></div>
     <div class="trk-cell"><div class="k">BIAS</div><div class="v ${b.bias==='Bullish'?'up':b.bias==='Bearish'?'dn':'nt'}">${b.bias}</div></div>
   </div>`;
+}
+/* ---------- opening range breaks ---------- */
+function orRows(list, el, tag, label){
+  if(!$(el))return;
+  $(tag).textContent=(list||[]).length+' HITS';
+  $(el).innerHTML=(list||[]).length? list.map(r=>`<div class="brk-row">
+      <div><b>${r.symbol}</b> <span class="sec">${r.sector||''}</span></div>
+      <div class="brk-mid">${label} ${fmt(r.level)} ✅ · ₹${fmt(r.ltp)} <span class="up">▲${r.chg}%</span> · Vol ${volFmt(r.volume)}</div>
+      <span class="chip up">🟢 BUY</span></div>`).join('')
+    : `<div class="empty">No breaks yet — levels build from live candles after 9:20 AM</div>`;
 }
 
 /* ---------- market mood ---------- */
@@ -276,11 +286,11 @@ function renderMood(m){
   if($('moodRules')) $('moodRules').innerHTML=P.map(x=>`<span class="rule">${x}</span>`).join('');
 }
 
+
 /* ---------- options watchlist ---------- */
 function renderOptions(stocks, sectorRank, total){
   const ce=[...stocks].filter(r=>r.chg>=1).sort((a,b)=>b.chg-a.chg).slice(0,6);
   const pe=[...stocks].filter(r=>r.chg<=-1).sort((a,b)=>a.chg-b.chg).slice(0,6);
-  if(!changed('opt', [ce,pe])) return;
   const line=(r,cls)=>{
     const rk=sectorRank[r.sector]||99, why=[cls==='up'?'trend up':'trend down'];
     if(cls==='up'&&rk<=3)why.push('strong sector');
@@ -294,7 +304,7 @@ function renderOptions(stocks, sectorRank, total){
   $('peList').innerHTML = pe.length? pe.map(r=>line(r,'dn')).join('') : `<div class="empty">No clear PE bias</div>`;
 }
 
-/* ---------- KRT scanner calls (Chartink) ---------- */
+/* ---------- CHARTINK scanner buckets ---------- */
 function ckName(c){ return c.scan_name||c.alert_name||c.scanName||c.name||'Chartink scan'; }
 function ckStocks(c){
   let st=c.stocks||c.symbols||c.stock||'';
@@ -304,7 +314,7 @@ function ckStocks(c){
 }
 function ckTime(c){ return c.triggered_at||c.at||c.time||''; }
 function renderChartink(list){
-  if(!changed('ck', list)) return;
+  if(!changed("ck", arguments[0])) return;
   const all=(list||[]).slice().reverse();
   if(!$('ckOther'))return;
   $('ckOtherTag').textContent=all.length+' CALLS';
@@ -324,9 +334,9 @@ function renderChartink(list){
 /* ---------- jackpot suggest zones ---------- */
 let zoneData=[];
 function renderZones(list){
+  if(!changed("zones", arguments[0])) return;
   zoneData=list||[];
   if(!$('zoneBox'))return;
-  if(!changed('zones', list)) return;
   const must=zoneData.filter(z=>z.must).length;
   $('zoneTag').textContent=`${zoneData.length} ZONES${must?' · '+must+' MUST TRY':''}`;
   $('zoneBox').innerHTML = zoneData.length? zoneData.map((z,i)=>`
@@ -349,13 +359,13 @@ function renderZones(list){
     </div>`).join('') : `<div class="empty">No clean zones right now — zones appear when trend, sector and VWAP line up</div>`;
 }
 function zMsg(z){
-  return `${z.side==='BUY'?'🎯 KRT BUY ZONE':'🎯 KRT SELL ZONE'}${z.must?(z.side==='BUY'?' ⭐ MUST TRY · LOOKING BIG JACKPOT — CE':' ⭐ MUST TRY · LOOKING BIG CRASH — PE'):''}\n\n${z.symbol} (${z.sector})\nLTP ₹${fmt(z.ltp)} (${z.chg>=0?'+':''}${z.chg}%)\n\n${z.side==='BUY'?'Buy zone':'Sell zone'}: ${z.zone_lo} – ${z.zone_hi}\nSL: ${z.sl} (${z.sl_pct}%)\nT1: ${z.t1} (+${z.t1_pct}%)\nT2: ${z.t2} (+${z.t2_pct}%)\nT3: ${z.t3} (+${z.t3_pct}%)\n\nScore: ${z.score}/100\nWhy: ${z.why}\n${z.note}\n\n⚠ Educational only. Not investment advice.`;
+  return `${z.side==='BUY'?'🎯 KRT BUY ZONE':'🎯 KRT SELL ZONE'}${z.must?(z.side==='BUY'?' ⭐ MUST TRY · LOOKING BIG JACKPOT — CE':' ⭐ MUST TRY · LOOKING BIG CRASH — PE'):''}\n\n${z.symbol} (${z.sector})\nLTP ₹${fmt(z.ltp)} (${z.chg>=0?'+':''}${z.chg}%)\n\n${z.side==='BUY'?'Buy zone':'Sell zone'}: ${z.zone_lo} – ${z.zone_hi}\nSL: ${z.sl}\nT1: ${z.t1}\nT2: ${z.t2}\nT3: ${z.t3}\n\nScore: ${z.score}/100\nWhy: ${z.why}\n${z.note}\n\n⚠ Educational only. Not investment advice.`;
 }
 function waZone(i){ if(zoneData[i]) openWA(zMsg(zoneData[i])); }
 $('zoneSend') && ($('zoneSend').onclick=()=>{
   if(!zoneData.length)return;
   openWA('🎯 KRT JACKPOT SUGGEST — ZONES\n\n'+zoneData.slice(0,8).map(z=>
-    `${z.must?'⭐ ':''}${z.symbol} ${z.side} ${z.zone_lo}–${z.zone_hi} | SL ${z.sl} | T1 ${z.t1} (+${z.t1_pct}%) | ${z.score}/100`).join('\n')+
+    `${z.must?'⭐ ':''}${z.symbol} ${z.side} ${z.zone_lo}–${z.zone_hi} | SL ${z.sl} | T ${z.t1}/${z.t2} | ${z.score}/100`).join('\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
 
@@ -411,12 +421,13 @@ async function pingOnline(){
   }catch(e){}
 }
 pingOnline(); setInterval(pingOnline, 45000);
+
 /* ---------- index option setups ---------- */
 let idxData=[];
 function renderIdxSetups(list){
+  if(!changed("idx", arguments[0])) return;
   idxData=list||[];
   if(!$('idxSetupBox'))return;
-  if(!changed('idx', list)) return;
   const best=idxData.find(x=>x.side&&x.conf>=2);
   $('idxSetTag').textContent = best? `BEST: ${best.index} ${best.side} · ${best.score}/100` : 'NO CLEAR SETUP';
   $('idxSetupBox').innerHTML = idxData.length? idxData.map(x=>{
@@ -471,7 +482,7 @@ function waIdx(name){ const x=idxData.find(y=>y.index===name); if(x) openWA(idxM
 $('idxSend') && ($('idxSend').onclick=()=>{
   if(!idxData.length)return;
   openWA('📈 KRT INDEX OPTIONS VIEW\n\n'+idxData.map(x=>
-    `${x.index}: ${x.side||'WAIT'} ${x.score}/100 · spot ${x.spot} (${x.chg>=0?'+':''}${x.chg}%)${x.trade?`\n   ${x.trade.symbol} @ ₹${x.trade.entry} · SL ₹${x.trade.sl} · T1 ₹${x.trade.t1}`:''}\n   ${x.verdict}`).join('\n\n')+
+    `${x.index}: ${x.side||'WAIT'} ${x.score}/100 · spot ${x.spot} (${x.chg>=0?'+':''}${x.chg}%)${x.strikes&&x.strikes.length?` · ${x.opt} ${x.strikes[0].strike} ${x.strikes[0].type}`:''}\n   ${x.verdict}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
 
@@ -488,15 +499,13 @@ function renderSession(sess, ib){
     $('idxBiasPill').innerHTML=`📊 INDEX ${ib.bias} <span class="nt2">avg ${ib.avg>=0?'+':''}${ib.avg}%</span>`;
   }
 }
-
 /* ---------- call of the day ---------- */
 let codData=null;
 function renderCOD(c){
   codData=c;
   if(!$('codBox'))return;
-  if(!changed('cod', c)) return;
   if(!c){ $('codTag').textContent='WAITING';
-    $('codBox').innerHTML=`<div class="empty">Waiting for a high-conviction setup</div>`; return; }
+    $('codBox').innerHTML=`<div class="empty">Waiting for a high-conviction setup — appears when trend, sector and VWAP all align</div>`; return; }
   $('codTag').textContent=`${c.symbol} · ${c.score}/100`;
   $('codBox').innerHTML=`
     <div class="cod-head">
@@ -535,7 +544,7 @@ function renderCOD(c){
     <div class="cod-plan">${c.plan}</div>`;
 }
 function codMsg(c){
-  return `🔥 KRT CALL OF THE DAY\n\n${c.symbol} (${c.sector}) — ${c.side}\nScore ${c.score}/100 · ${c.view}\n\n${c.side==='BUY'?'Buy zone':'Sell zone'}: ${c.zone_lo} – ${c.zone_hi}\nLTP: ₹${c.ltp}\n\nSL: ${c.sl} (${c.sl_pct}%)\nT1: ${c.t1} (+${c.t1_pct}%)\nT2: ${c.t2} (+${c.t2_pct}%)\nT3: ${c.t3} (+${c.t3_pct}%)\n\nOPTIONS:\n${(c.strikes||[]).map(o=>`• ${c.symbol} ${o.strike} ${o.type} (${o.label})`).join('\n')}${c.chain?`\n\nOI: ${c.chain.writer} · PCR ${c.chain.pcr}`:''}\n\nWhy: ${c.why}\n${c.plan}\n\n⚠ Educational only. Not investment advice.`;
+  return `🔥 KRT CALL OF THE DAY\n\n${c.symbol} (${c.sector}) — ${c.side}\nScore ${c.score}/100 · ${c.view}\n\n${c.side==='BUY'?'Buy zone':'Sell zone'}: ${c.zone_lo} – ${c.zone_hi}\nLTP: ₹${c.ltp}\n\nSL: ${c.sl} (${c.sl_pct}%)\nT1: ${c.t1} (+${c.t1_pct}%)\nT2: ${c.t2} (+${c.t2_pct}%)\nT3: ${c.t3} (+${c.t3_pct}%)\n\nOPTIONS:\n${(c.strikes||[]).map(o=>`• ${c.symbol} ${o.strike} ${o.type} (${o.label})`).join('\n')}\n\nWhy: ${c.why}\n${c.plan}\n\n⚠ Educational only. Not investment advice.`;
 }
 $('codSend') && ($('codSend').onclick=()=>{ if(codData) openWA(codMsg(codData)); });
 
@@ -545,7 +554,6 @@ function renderPreopen(po){
   preopenData = po || {up:[],down:[]};
   const up=preopenData.up||[], dn=preopenData.down||[];
   gapUpSet=new Set(up.map(x=>x.symbol)); gapDownSet=new Set(dn.map(x=>x.symbol));
-  if(!changed('po', po)) return;
   $('poTag').textContent = (up.length+dn.length)
       ? `${up.length}▲ / ${dn.length}▼ ${preopenData.final?'· FINAL':'· LIVE'}`
       : 'WAITING 9:00 AM';
@@ -567,9 +575,24 @@ $('poSend') && ($('poSend').onclick=()=>{
     '\n\n⚠ Educational only. Not investment advice.');
 });
 
+/* ---------- break lists ---------- */
+function brkRows(list, el, tagEl, dir, label){
+  $(tagEl).textContent=(list||[]).length+' HITS';
+  if(!list || !list.length){ $(el).innerHTML=`<div class="empty">Waiting… (levels 9:20 apram ready agum)</div>`; return; }
+  $(el).innerHTML=list.map(r=>{
+    const lv = dir==='up' ? (r.pwh||r.pdh||r.orh) : r.pdl;
+    return `<div class="brk-row">
+      <div><b>${r.symbol}</b> <span class="sec">${r.sector}</span></div>
+      <div class="brk-mid">${label} ${fmt(lv)} ✅ · ₹${fmt(r.ltp)}
+        <span class="${dir==='up'?'up':'dn'}">${dir==='up'?'▲':'▼'}${Math.abs(r.chg)}%</span> · Vol ${volFmt(r.volume)}</div>
+      <span class="chip ${dir==='up'?'up':'dn'}">${dir==='up'?'🟢 BUY':'🔴 SELL'}</span>
+    </div>`;
+  }).join('');
+}
+
 /* ---------- sectors ---------- */
 function renderSectors(sectors){
-  if(!changed('sec', sectors)) return;
+  if(!changed("sec", arguments[0])) return;
   const strong=sectors.slice(0,6), weak=[...sectors].reverse().slice(0,6);
   $('strongSectors').innerHTML=strong.map(s=>`
     <div class="sec-row">
@@ -621,7 +644,7 @@ function renderAlerts(alerts, chartink){
   (chartink||[]).forEach(c=>{
     const k='c:'+JSON.stringify(c).slice(0,60); if(seen.has(k))return; seen.add(k);
     const nm = ckName(c), st = ckStocks(c), tm = ckTime(c);
-    const bear=/low|sell|down|crash|breakdown|short|weak/i.test(nm);
+    const bear=/low|sell|down|crash|breakdown|short/i.test(nm);
     pushAlert({symbol: st||nm, side: bear?'SELL':'BUY', type: bear?'DANGER':'BUY',
       reason:`<b>KRT CALL · ${nm}</b>`,
       detail:`Scanner: ${nm}${tm?' · Time: '+tm:''}`});
@@ -629,34 +652,26 @@ function renderAlerts(alerts, chartink){
 }
 
 /* ---------- news ---------- */
-const TAGCLS={'CRASH RISK':'dn','COMPANY RISK':'dn','NEGATIVE':'dn','ORDER WIN':'up','STRONG POSITIVE':'up','POSITIVE':'up','RESULTS':'nt','NEUTRAL':'nt'};
+const TAGCLS={'BREAKING':'brk','CRASH RISK':'dn','COMPANY RISK':'dn','NEGATIVE':'dn','ORDER WIN':'up','STRONG POSITIVE':'up','POSITIVE':'up','RESULTS':'nt','NEUTRAL':'nt'};
 function renderNews(items){
-  if(!changed('news', items)) return;
-  if(!items||!items.length){ $('newsList').innerHTML=`<div class="empty">No fresh market news right now</div>`; return; }
+  if(!items||!items.length){ $('newsList').innerHTML=`<div class="empty">No fresh market news in the last 6 hours</div>`; return; }
   $('newsList').innerHTML=items.map(n=>`
     <div class="news-item"><div class="head">
-      <span class="chip ${TAGCLS[n.tag]||'nt'}">${n.tag}</span>
+      <span class="chip ${TAGCLS[n.tag]||'nt'}">${n.fast?'⚡ ':''}${n.tag}</span>
       <span>${n.link?`<a class="nlink" href="${n.link}" target="_blank" rel="noopener">${n.title}</a>`:n.title}</span>
       <span class="impact imp${n.impact>=9?'9':n.impact>=7?'7':''}">${n.impact}/10 · ${n.ago||''}</span></div>
       <div class="ai-sum">🕒 ${n.ago||''} · ${n.source}${n.stocks&&n.stocks.length?' · '+n.stocks.join(', '):''}</div></div>`).join('');
 }
 function renderNewsSignals(sig){
-  if(!changed('nsig', sig)) return;
-  ((sig&&sig.events)||[]).forEach(e=>{
-    const k='ev:'+e.symbol+e.headline.slice(0,30); if(seen.has(k))return; seen.add(k);
-    pushAlert({symbol:e.symbol, side:e.kind==='BAD'?'SELL':'BUY',
-      type:e.kind==='BAD'?'DANGER':'BUY',
-      reason:`<b>${e.kind==='BAD'?'⚠ COMPANY EVENT':'✅ COMPANY EVENT'}</b> — ${e.headline}`,
-      detail:`${e.action} · impact ${e.impact}/10 · ${e.ago} · ${e.source}`});
-  });
   const jp=(sig&&sig.jackpot)||[], dg=(sig&&sig.danger)||[], cr=(sig&&sig.market_crash)||[];
   $('newsJackpot').innerHTML = jp.length? jp.map(n=>`
     <div class="sig-card bull slim">
       <div class="sig-top"><b class="sym">${n.symbol}</b><span class="chip up">${n.tag}</span>
         <span class="impact">${n.impact}/10 · ${n.ago||''}</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
       <div class="nh">${n.headline}</div>
-      <div class="sig-foot"><span class="up">${n.verdict}</span></div>
-    </div>`).join('') : `<div class="empty">No fresh positive news</div>`;
+      <div class="sig-foot"><span class="up">${n.verdict}</span>
+        <button class="btn wa mini" onclick="openWA(${JSON.stringify('📰 NEWS JACKPOT\n\n'+n.symbol+'\n'+n.headline+'\n\n'+n.verdict+'\n\n⚠ Educational only.').replace(/"/g,'&quot;')})">🟢 WA</button></div>
+    </div>`).join('') : `<div class="empty">No fresh positive news (last 6 hrs)</div>`;
   $('newsDanger').innerHTML = (cr.map(c=>`
     <div class="sig-card bear slim">
       <div class="sig-top"><b class="sym dn">⚠ MARKET CRASH RISK</b><span class="impact">${c.impact}/10 · ${c.ago||''}</span></div>
@@ -669,8 +684,9 @@ function renderNewsSignals(sig){
         <span class="impact">${n.impact}/10 · ${n.ago||''}</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
       <div class="nh">${n.headline}</div>
       <div class="sig-foot"><span class="dn">${n.verdict}</span></div>
-    </div>`).join('')) || `<div class="empty">No fresh negative news</div>`;
+    </div>`).join('')) || `<div class="empty">No fresh negative news (last 6 hrs) 👍</div>`;
 
+  // crash banner
   if(cr.length){
     $('crashBanner').style.display='block';
     $('crashBanner').innerHTML=`🚨 <b>CRASH ALERT</b> — ${cr[0].headline} <span class="cb-act">${cr[0].action}</span>`;
@@ -689,6 +705,7 @@ async function pull(u){ try{ const r=await fetch(u); return r.ok? await r.json()
 async function refresh(){
   const d=await pull(CONFIG.DASHBOARD);
   if(d && !d.error){
+    // indices
     if(d.indices) $('idxStrip').innerHTML=d.indices.map(ix=>{
       const up=ix.chg>=0;
       const pts = ix.chgpts!=null ? `${up?'+':'−'}${fmt(Math.abs(ix.chgpts))}` : '';
@@ -704,6 +721,7 @@ async function refresh(){
     window.__last=uniq;
     renderStatus(d.status);
     renderBreadth(d.breadth);
+    orRows(d.or15,'or15List','or15Tag','15-min High');
     renderMood(d.mood);
     renderTracker(d.tracker, d.ind_ready);
     renderOptions(uniq, rank, sectors.length);
@@ -743,4 +761,4 @@ async function refreshNews(){
 }
 refresh(); refreshNews();
 setInterval(refresh, CONFIG.REFRESH_MS);
-setInterval(refreshNews, 90000);
+setInterval(refreshNews, 90000);          // news every 90s — much lighter
