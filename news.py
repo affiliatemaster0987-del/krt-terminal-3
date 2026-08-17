@@ -13,6 +13,7 @@ from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
 
 MAX_AGE_HOURS = 12
+FAST_MAX_AGE_HOURS = 4        # squawk feed romba fast — 4h mattum
 POLL_SECONDS = 45
 
 FEEDS = [
@@ -33,7 +34,13 @@ FEEDS = [
     ("ET Industry",       "https://economictimes.indiatimes.com/industry/rssfeeds/13352306.cms"),
     ("Zee Business",      "https://www.zeebiz.com/latest.xml/feed"),
     ("Reuters India",     "https://www.thehindubusinessline.com/markets/feeder/default.rss"),
+    ("Redbox",            "https://rss.app/feeds/aaa.xml"),
+    ("FirstSquawk",       "https://rss.app/feeds/bbb.xml"),
 ]
+
+# Breaking-news squawk feeds — inga headline romba short, so India-relevance
+# filter apply pannaama neradiya kaattanum (BREAKING speed thaan mukkiyam).
+FAST_SOURCES = {"Redbox", "FirstSquawk"}
 
 RESULT_WORDS = ["q1 results", "q2 results", "q3 results", "q4 results", "quarterly results",
                 "net profit", "revenue rises", "revenue falls", "ebitda", "earnings",
@@ -188,31 +195,57 @@ def _affected(title):
     return [s for s in STOCK_KEYWORDS if s in up][:4]
 
 
+def _txt(node, *names):
+    """RSS-um Atom-um ஒரே madhiri padikka (rss.app Atom kudukkalam)."""
+    for n in names:
+        v = node.findtext(n)
+        if v and v.strip():
+            return v.strip()
+        for ch in node:
+            if ch.tag.split("}")[-1] == n:
+                if ch.text and ch.text.strip():
+                    return ch.text.strip()
+                href = ch.attrib.get("href")
+                if href:
+                    return href.strip()
+    return ""
+
+
 def _fetch_feed(source, url):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 KRT-Terminal"})
     with urllib.request.urlopen(req, timeout=10) as r:
         xml = r.read()
     root = ET.fromstring(xml)
+    fast = source in FAST_SOURCES
+    max_age = FAST_MAX_AGE_HOURS if fast else MAX_AGE_HOURS
+
+    nodes = [n for n in root.iter() if n.tag.split("}")[-1] in ("item", "entry")]
     out = []
-    for item in root.iter("item"):
-        title = (item.findtext("title") or "").strip()
+    for item in nodes:
+        title = _txt(item, "title")
         if not title:
             continue
+        title = re.sub(r"\s+", " ", title).strip(" *-")
         low = title.lower()
-        age = _age_hours((item.findtext("pubDate") or "").strip())
-        if age is not None and age > MAX_AGE_HOURS:
+        age = _age_hours(_txt(item, "pubDate", "published", "updated"))
+        if age is not None and age > max_age:
             continue
         if _is_noise(low):
             continue
         tag, impact = _classify(title)
+        if fast:
+            impact = min(10, impact + 2)          # squawk = speed, konjam boost
+            if tag == "NEUTRAL":
+                tag = "BREAKING"
+                impact = max(impact, 6)
         out.append({"source": source, "title": title, "event": _event_kind(title),
-                    "link": (item.findtext("link") or "").strip(),
+                    "link": _txt(item, "link"), "fast": fast,
                     "age_h": round(age, 2) if age is not None else 99, "ago": _ago(age),
                     "tag": tag, "impact": impact, "stocks": _affected(title)})
-    return out[:15]
+    return out[:20 if fast else 15]
 
 
-_ORDER = {"CRASH RISK": 0, "COMPANY RISK": 1, "ORDER WIN": 2, "RESULTS": 3,
+_ORDER = {"CRASH RISK": 0, "BREAKING": 0, "COMPANY RISK": 1, "ORDER WIN": 2, "RESULTS": 3,
           "STRONG POSITIVE": 4, "NEGATIVE": 5, "POSITIVE": 6, "NEUTRAL": 7}
 
 
@@ -235,7 +268,7 @@ def get_news():
         items.sort(key=lambda x: (_ORDER.get(x["tag"], 8), x["age_h"], -x["impact"]))
         if not items:
             print("[news] no items after filters — feeds may be blocked")
-        _news_cache.update(items=items[:25], ts=now)
+        _news_cache.update(items=items[:35], ts=now)
         return _news_cache["items"]
 
 
