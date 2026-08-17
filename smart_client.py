@@ -477,6 +477,7 @@ def _bg_worker():
     while True:
         try:
             _load_tokens()
+            OC._load_master()          # non-blocking; warms in background
             _warm_levels()
             if len(_levels["pdh"]) < 20:
                 _warm_levels_yahoo()
