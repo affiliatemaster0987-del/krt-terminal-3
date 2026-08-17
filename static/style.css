@@ -478,3 +478,6 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .aff-HIGH{color:var(--bear);background:var(--bear-glow);border:1px solid rgba(255,77,94,.4)}
 .aff-MEDIUM{color:var(--amber);border:1px solid rgba(245,184,64,.35)}
 .aff-LOW{color:var(--dim);border:1px solid var(--line)}
+
+/* squawk / breaking news chip */
+.chip.brk{color:#0d1119;background:var(--amber);border-color:var(--amber);font-weight:800}
