@@ -377,10 +377,11 @@ function renderTradeLog(t){
   const done=rows.filter(s=>s.status!=='LIVE').length;
   $('logTag').textContent=`${rows.length} CALLS · ${done} CLOSED`;
   const res=s=>{
-    if(s.status==='TARGET COMPLETED') return `<span class="res win">✅ ALL TARGETS HIT</span>`;
-    if(s.status==='T2 HIT')  return `<span class="res win">✅ TARGET 2 HIT</span>`;
-    if(s.status==='T1 HIT')  return `<span class="res win">✅ TARGET 1 HIT</span>`;
-    if(s.status==='SL HIT')  return `<span class="res loss">❌ SL HIT</span>`;
+    const at = t => t? ` <i class="hit-t">@ ${t}</i>` : '';
+    if(s.status==='TARGET COMPLETED') return `<span class="res win">✅ ALL TARGETS HIT${at(s.t3_at)}</span>`;
+    if(s.status==='T2 HIT')  return `<span class="res win">✅ TARGET 2 HIT${at(s.t2_at)}</span>`;
+    if(s.status==='T1 HIT')  return `<span class="res win">✅ TARGET 1 HIT${at(s.t1_at)}</span>`;
+    if(s.status==='SL HIT')  return `<span class="res loss">❌ SL HIT${at(s.sl_at)}</span>`;
     if(s.status==='EXPIRED') return `<span class="res exp">— NO HIT (expired)</span>`;
     return `<span class="res run">⏳ RUNNING</span>`;
   };
@@ -392,6 +393,7 @@ function renderTradeLog(t){
       ${s.source==='INDEX'?'<span class="lg-tag idx">INDEX OPTION</span>':'<span class="lg-tag stk">STOCK</span>'}
       <span class="lg-lv">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}</span>
       ${res(s)}
+      <span class="lg-line">Given ${s.ts}${s.t1_at?` · T1 ✅ ${s.t1_at}`:''}${s.t2_at?` · T2 ✅ ${s.t2_at}`:''}${s.t3_at?` · T3 ✅ ${s.t3_at}`:''}${s.sl_at?` · SL ❌ ${s.sl_at}`:''}</span>
       ${s.done_at?`<span class="lg-done">at ${s.done_at}</span>`:''}
       ${s.pnl_pct!=null?`<span class="${s.pnl_pct>=0?'up':'dn'}">${s.pnl_pct>=0?'+':''}${s.pnl_pct}%</span>`:''}
     </div>`).join('') : `<div class="empty">No calls given yet today — calls appear here with their result</div>`;
@@ -405,8 +407,9 @@ function renderStructure(list){
   $('strTag').textContent=L.length+' ALERTS';
   $('strBox').innerHTML = L.length? L.map(x=>`
     <div class="str-row ${x.dir==='up'?'sup':'sdn'}">
+      <span class="str-at">${x.at||''}</span>
       <b>${x.symbol}</b><span class="sec">${x.sector||''}</span>
-      <span class="str-ev ${x.dir==='up'?'up':'dn'}">${x.event}</span>
+      <span class="str-ev ${x.dir==='up'?'up':'dn'}">${x.big?'⭐ ':''}${x.event}</span>
       <span class="${x.chg>=0?'up':'dn'}">₹${fmt(x.ltp)} ${x.chg>=0?'▲':'▼'}${Math.abs(x.chg)}%</span>
       <span class="str-note">${x.note}</span>
       <span class="str-act">${x.action}</span>
@@ -733,7 +736,7 @@ async function refresh(){
       const k='st:'+x.symbol+x.event; if(seen.has(k))return; seen.add(k);
       pushAlert({symbol:x.symbol, side:x.dir==='up'?'BUY':'SELL',
         type:x.dir==='up'?'BUY':'DANGER',
-        reason:`<b>${x.event}</b> — ${x.note}`,
+        reason:`<b>${x.at||''} · ${x.event}</b> — ${x.note}`,
         detail:`₹${fmt(x.ltp)} (${x.chg>=0?'+':''}${x.chg}%) · ${x.sector} · ${x.action}`});
     });
     renderCOD(d.call_day);
