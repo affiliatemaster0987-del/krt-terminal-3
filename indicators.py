@@ -24,9 +24,18 @@ def _ist():
 
 
 # ═════════ candle builder ═════════
-def feed(rows):
-    """Ovvoru dashboard poll-layum call agum. rows = live stock list."""
+MAX_TICK_JUMP = 0.10      # 1 min-la 10%-ku mela jump = bad tick, reject
+
+
+def feed(rows, live=True):
+    """Ovvoru dashboard poll-layum call agum. rows = live stock list.
+
+    live=False (demo/fallback data) na candle-la POdaadhu — illena fake price
+    real price-oda mix aagi ATR vedichidum.
+    """
     global _today
+    if not live:
+        return
     now = _ist()
     day = now.strftime("%Y-%m-%d")
     minute = now.replace(second=0, microsecond=0).timestamp()
@@ -47,6 +56,11 @@ def feed(rows):
                 continue
             vol = r.get("volume") or 0
             cs = CANDLES.setdefault(sym, [])
+            # ── bad-tick guard: last close-la irundhu 10%-ku mela jump = reject ──
+            if cs:
+                last_c = cs[-1]["c"]
+                if last_c and abs(px - last_c) / last_c > MAX_TICK_JUMP:
+                    continue
             if cs and cs[-1]["t"] == minute:
                 c = cs[-1]
                 c["h"] = max(c["h"], px); c["l"] = min(c["l"], px)
@@ -252,8 +266,11 @@ def enrich(rows):
         px = r.get("ltp") or 0
         if px:
             day_rng = (ind.get("day_high") or px) - (ind.get("day_low") or px)
-            floor = max(px * 0.005, day_rng * 0.30)      # min 0.5% or 30% of day range
+            floor = max(px * 0.005, min(day_rng, px * 0.05) * 0.30)
             atr = max(atr or 0, floor)
+            # ── sanity cap: intraday ATR normal-a price-oda 0.3-1.5%.
+            #    2.5%-ku mela pona data corrupt — clamp pannitta targets sane-a irukkum.
+            atr = min(atr, px * 0.025)
             r["sl_long"] = round(px - 1.2 * atr, 2)
             r["t1_long"] = round(px + 1.5 * atr, 2)
             r["t2_long"] = round(px + 2.5 * atr, 2)
