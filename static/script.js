@@ -248,7 +248,51 @@ function waTop(sym){
 }
 function setTier(t){ TIER=t; store.set('tier',t); renderTop(); }
 
-/* ---------- breadth ---------- */
+/* ---------- 👑 confluence super setups ---------- */
+let conflData=[];
+function renderConfluence(list){
+  if(!$('conflBox'))return;
+  if(!changed('confl', list)) return;
+  conflData=list||[];
+  const sup=conflData.filter(c=>c.super).length;
+  $('conflTag').textContent = conflData.length
+      ? `${conflData.length} SETUPS${sup?' · '+sup+' 👑 SUPER':''}` : 'SCANNING';
+  $('conflBox').innerHTML = conflData.length? conflData.map((c,i)=>`
+    <div class="cf-card ${c.side==='BUY'?'cfb':'cfs'} ${c.super?'cfsuper':''}">
+      <div class="cf-top">
+        ${c.super?'<span class="cf-crown">👑 SUPER CONFLUENCE</span>':''}
+        <span class="cf-setup">${c.setup}</span>
+        <span class="cf-pts">${c.pts}<small>/10</small></span>
+      </div>
+      <div class="cf-head">
+        <b class="sym">${c.symbol}</b><span class="sec">${c.sector}</span>
+        <span class="chip ${c.side==='BUY'?'up':'dn'}">${c.side}</span>
+        <span class="${c.chg>=0?'up':'dn'}">₹${fmt(c.ltp)} ${c.chg>=0?'▲':'▼'}${Math.abs(c.chg)}%</span>
+        <span class="cf-score">${c.score}<small>/100</small></span>
+      </div>
+      <div class="cf-why">${c.why}</div>
+      <div class="cf-checks">
+        ${c.checks.map(x=>`<span class="cf-ok">✅ ${x}</span>`).join('')}
+        ${c.misses.map(x=>`<span class="cf-no">⬜ ${x}</span>`).join('')}
+      </div>
+      <div class="sig-lv"><span class="e">E ${c.entry}</span><span class="s">SL ${c.sl}</span>
+        <span class="t">T1 ${c.t1}</span><span class="t">T2 ${c.t2}</span><span class="t">T3 ${c.t3}</span></div>
+      <div class="cf-avoid">⚠ AVOID IF: ${c.avoid}${c.late?' · ⏰ LATE — 2:30 mudinjiduchu, size kammi':''}</div>
+      <div class="sig-foot"><span>${c.rvol?c.rvol+'x vol · ':''}RSI ${c.rsi} · ADX ${c.adx}</span>
+        <button class="btn wa mini" onclick="waConfl(${i})">🟢 WA</button></div>
+    </div>`).join('')
+    : `<div class="empty">No high-confluence setup yet — 6+ confirmations vandha mattum inga kaattum</div>`;
+}
+function waConfl(i){
+  const c=conflData[i]; if(!c)return;
+  openWA(`${c.super?'👑 KRT SUPER CONFLUENCE':'🎯 KRT CONFLUENCE'}\n\n${c.symbol} — ${c.side} — ${c.score}/100\n${c.setup} (${c.pts}/10)\n\n${c.checks.map(x=>'✅ '+x).join('\n')}\n\nEntry: ${c.entry}\nSL: ${c.sl}\nT1: ${c.t1} | T2: ${c.t2} | T3: ${c.t3}\n\n⚠ AVOID IF: ${c.avoid}\n\n⚠ Educational only. Not investment advice.`);
+}
+$('conflSend') && ($('conflSend').onclick=()=>{
+  if(!conflData.length)return;
+  openWA('👑 KRT CONFLUENCE SETUPS\n\n'+conflData.slice(0,5).map(c=>
+    `${c.super?'👑 ':''}${c.symbol} ${c.side} ${c.pts}/10 · ${c.setup}\nE ${c.entry} · SL ${c.sl} · T1 ${c.t1}`).join('\n\n')+
+    '\n\n⚠ Educational only. Not investment advice.');
+});
 function renderBreadth(b){
   if(!b||!$('breadthBox'))return;
   $('breadthBox').innerHTML=`<div class="trk-grid">
@@ -260,6 +304,7 @@ function renderBreadth(b){
     <div class="trk-cell"><div class="k">BIAS</div><div class="v ${b.bias==='Bullish'?'up':b.bias==='Bearish'?'dn':'nt'}">${b.bias}</div></div>
   </div>`;
 }
+
 /* ---------- opening range breaks ---------- */
 function orRows(list, el, tag, label){
   if(!$(el))return;
@@ -723,6 +768,7 @@ async function refresh(){
 
     window.__last=uniq;
     renderStatus(d.status);
+    renderConfluence(d.confluence);
     renderBreadth(d.breadth);
     orRows(d.or15,'or15List','or15Tag','15-min High');
     renderMood(d.mood);
