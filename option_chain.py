@@ -17,6 +17,8 @@ _lock = threading.Lock()
 _cache = {}          # sym -> {"ts":, "data":}
 CACHE_SEC = 420          # 7 min — chain moves slowly, saves API load      # option chain 3 min-ku oru dhadava podhum
 _master = {"rows": [], "ts": 0, "loading": False}
+# Index option chains mattum thevai — stock options thevai illa (RAM saving)
+IDX_NAMES = ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50")
 
 SCRIP_MASTER_URL = ("https://margincalculator.angelbroking.com/OpenAPI_File/"
                     "files/OpenAPIScripMaster.json")
@@ -45,13 +47,47 @@ def _load_master(blocking=False):
                              daemon=True).start()
         return _master["rows"]          # [] until the download finishes
     try:
+        # ── STREAMING parse ──
+        # File ~150MB. json.loads() full-a panna peak RAM ~1.5GB -> Render
+        # free tier (512MB) OOM-kill aagum. Adhanaala oru object-a mattum
+        # parse panni, thevaiyaanadha mattum vechukirom (peak ~30MB).
+        want = set(IDX_NAMES) if IDX_NAMES else None
         req = urllib.request.Request(SCRIP_MASTER_URL, headers={"User-Agent": "KRT"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            rows = json.loads(r.read().decode())
-        opts = [x for x in rows if x.get("exch_seg") == "NFO"
-                and x.get("instrumenttype") in ("OPTSTK", "OPTIDX")]
+        opts, buf, kept = [], "", 0
+        with urllib.request.urlopen(req, timeout=120) as r:
+            while True:
+                chunk = r.read(1 << 20)          # 1 MB at a time
+                if not chunk:
+                    break
+                buf += chunk.decode("utf-8", "ignore")
+                # ovvoru chunk-ayum mudhalilendhu scan pannuvom; mudiyaadha
+                # kadaisi object-a mattum buf-la vechiruppom
+                depth, start, cut = 0, None, 0
+                for i, ch in enumerate(buf):
+                    if ch == "{":
+                        if depth == 0:
+                            start = i
+                        depth += 1
+                    elif ch == "}":
+                        if depth > 0:
+                            depth -= 1
+                            if depth == 0 and start is not None:
+                                try:
+                                    x = json.loads(buf[start:i + 1])
+                                    if (x.get("exch_seg") == "NFO"
+                                            and x.get("instrumenttype") in ("OPTSTK", "OPTIDX")
+                                            and (want is None or x.get("name") in want)):
+                                        opts.append({k: x.get(k) for k in
+                                                     ("token", "symbol", "name", "expiry",
+                                                      "strike", "instrumenttype")})
+                                        kept += 1
+                                except Exception:
+                                    pass
+                                cut = i + 1
+                                start = None
+                buf = buf[cut:]                  # incomplete tail mattum meethi
         _master.update(rows=opts, ts=time.time())
-        print(f"[optchain] master loaded: {len(opts)} option contracts")
+        print(f"[optchain] master loaded (streamed): {kept} option contracts")
     except Exception as e:
         print("[optchain] master error:", e)
     _master["loading"] = False
