@@ -102,7 +102,11 @@ SCRIP_MASTER_URL = ("https://margincalculator.angelbroking.com/OpenAPI_File/"
 _tokens = {}          # symbol -> token
 _tokens_ready = False
 _cache = {"data": None, "ts": 0, "mode": "demo"}
-_levels = {"pdh": {}, "pdl": {}, "pwh": {}, "orh": {}, "day": "", "or_day": ""}
+_levels = {"pdh": {}, "pdl": {}, "pwh": {}, "pwl": {}, "pmh": {}, "pml": {},
+           "orh": {}, "day": "", "or_day": ""}
+# live option premium map: {"FINNIFTY 26150 CE": 352.5, ...} — tracker idha use pannum
+_opt_px = {}
+_struct_seen = {}          # {"BHEL|BREAKOUT": "13:28"} — alert first-seen time
 _preopen = {"day": "", "rows": [], "final": False}
 _diag = {"source": "angel", "tokens": 0, "pdh_ok": 0, "orh_ok": 0, "last_error": "", "sample_error": "",
          "login": "not tried", "running": False, "started": ""}
@@ -288,9 +292,13 @@ def _yf_levels(sym):
     if not rows:
         return None
     pdh, pdl = rows[-1][1], rows[-1][2]
-    past5 = rows[-5:]
+    past5 = rows[-5:]                      # previous week (5 sessions)
     pwh = max(x[1] for x in past5)
-    return round(pdh, 2), round(pdl, 2), round(pwh, 2)
+    pwl = min(x[2] for x in past5)
+    pmh = max(x[1] for x in rows)          # 1-month high
+    pml = min(x[2] for x in rows)          # 1-month low
+    return (round(pdh, 2), round(pdl, 2), round(pwh, 2),
+            round(pwl, 2), round(pmh, 2), round(pml, 2))
 
 
 def _yf_opening_high(sym):
@@ -318,7 +326,8 @@ def _warm_levels_yahoo():
         try:
             v = _yf_levels(sym)
             if v:
-                _levels["pdh"][sym], _levels["pdl"][sym], _levels["pwh"][sym] = v
+                (_levels["pdh"][sym], _levels["pdl"][sym], _levels["pwh"][sym],
+                 _levels["pwl"][sym], _levels["pmh"][sym], _levels["pml"][sym]) = v
                 ok += 1
         except Exception as ex:
             if not _diag["sample_error"]:
@@ -407,9 +416,14 @@ def _warm_levels():
                 _levels["pdh"][sym] = round(float(prev[2]), 2)
                 _levels["pdl"][sym] = round(float(prev[3]), 2)
                 # prev week high: kadaisi 5 completed sessions (today thavira)
-                past = [x for x in c if x[0][:10] != today][-5:]
+                done = [x for x in c if x[0][:10] != today]
+                past = done[-5:]
                 if past:
                     _levels["pwh"][sym] = round(max(float(x[2]) for x in past), 2)
+                    _levels["pwl"][sym] = round(min(float(x[3]) for x in past), 2)
+                if done:
+                    _levels["pmh"][sym] = round(max(float(x[2]) for x in done), 2)
+                    _levels["pml"][sym] = round(min(float(x[3]) for x in done), 2)
             except Exception as ex:
                 if not _diag["sample_error"]:
                     _diag["sample_error"] = f"{sym}: {str(ex)[:200]}"
@@ -590,7 +604,9 @@ def _build_dashboard_inner():
         IND.feed(stocks + indices, live=(mode == "live"))
         IND.enrich(stocks)
         IND.enrich(indices)
-        IND.update_tracker({r["symbol"]: r["ltp"] for r in stocks})
+        _pmap = {r["symbol"]: r["ltp"] for r in stocks}
+        _pmap.update(_opt_px)          # ← index option calls-um track aagum
+        IND.update_tracker(_pmap)
     except Exception as e:
         print("indicator error:", e)
 
@@ -677,7 +693,7 @@ def _build_dashboard_inner():
     try:
         srank = {x["sector"]: i + 1 for i, x in enumerate(sectors)}
         made = 0
-        DAILY_CAP = 40
+        DAILY_CAP = 12          # 44 calls -> max 12 quality calls a day
         if sess["mult"] == 0 or IND.stats()["today"]["total"] >= DAILY_CAP:
             stocks_iter = []
         else:
@@ -686,6 +702,14 @@ def _build_dashboard_inner():
             ind = r.get("ind") or {}
             htf = (ind.get("htf") or {})
             tags, tech = IND.confirmations(r)
+            _s = r["symbol"]; _px = r.get("ltp") or 0
+            _pwh = _levels["pwh"].get(_s); _pwl = _levels["pwl"].get(_s)
+            _pmh = _levels["pmh"].get(_s); _pml = _levels["pml"].get(_s)
+            lvl_b = lvl_s = 0
+            if _pmh and _px > _pmh: tags.append("MONTH HIGH BREAK"); lvl_b = 14
+            elif _pwh and _px > _pwh: tags.append("WEEK HIGH BREAK"); lvl_b = 9
+            if _pml and _px < _pml: lvl_s = 14
+            elif _pwl and _px < _pwl: lvl_s = 9
             if r["chg"] >= 1 and (r.get("volume") or 0) > 3e5:
                 vol_b = 6 if (r.get("volume") or 0) > 1e7 else 0
                 htf_b = 10 if htf.get("align") == 1 else (-12 if htf.get("align") == -1 else 0)
@@ -693,16 +717,19 @@ def _build_dashboard_inner():
                     tags.append("HTF aligned")
                 sc_ = (52 + min(24, round(r["chg"] * 5)) + tech + vol_b + htf_b
                        + sess["mult"] + ibias["long"]
+                       + lvl_b
                        + (8 if srank.get(r["sector"], 99) <= 3 else 0))
                 sl_ = r.get("sl_long") or round(r["ltp"] * 0.99, 2)
                 t1_ = r.get("t1_long") or round(r["ltp"] * 1.01, 2)
                 t2_ = r.get("t2_long") or round(r["ltp"] * 1.02, 2)
                 t3_ = r.get("t3_long") or round(r["ltp"] * 1.035, 2)
-                if sc_ >= 82:
+                if sc_ >= 88 and len(tags) >= 3:
                     if IND.log_signal(r["symbol"], "BUY", r["ltp"], sl_, t1_, t2_, t3_,
                                       min(99, sc_), " + ".join(tags) or "Momentum", "JACKPOT"):
                         made += 1
             tags2, tech2 = IND.confirmations_short(r)
+            if _pml and _px < _pml: tags2.append("MONTH LOW BREAK")
+            elif _pwl and _px < _pwl: tags2.append("WEEK LOW BREAK")
             if r["chg"] <= -1:
                 vol_b2 = 6 if (r.get("volume") or 0) > 1e7 else 0
                 htf_b2 = 10 if htf.get("align") == -1 else (-12 if htf.get("align") == 1 else 0)
@@ -710,11 +737,12 @@ def _build_dashboard_inner():
                     tags2.append("HTF aligned")
                 sc2 = (52 + min(24, round(abs(r["chg"]) * 5)) + tech2 + vol_b2 + htf_b2
                        + sess["mult"] + ibias["short"]
+                       + lvl_s
                        + (8 if srank.get(r["sector"], 99) >= len(sectors) - 2 else 0))
                 sl2 = r.get("sl_short") or round(r["ltp"] * 1.01, 2)
                 t1s = r.get("t1_short") or round(r["ltp"] * 0.99, 2)
                 t2s = r.get("t2_short") or round(r["ltp"] * 0.98, 2)
-                if sc2 >= 82:
+                if sc2 >= 88 and len(tags2) >= 3:
                     if IND.log_signal(r["symbol"], "SELL", r["ltp"], sl2, t1s, t2s, None,
                                       min(99, sc2), " + ".join(tags2) or "Weak momentum", "DANGER"):
                         made += 1
@@ -835,6 +863,7 @@ def _build_dashboard_inner():
     # ── STRUCTURE ALERTS: breakout / breakdown / support break ──
     structure = []
     try:
+        _now_hm = _ist_now().strftime("%H:%M")
         for r in stocks:
             ind = r.get("ind") or {}
             px = r.get("ltp") or 0
@@ -842,12 +871,27 @@ def _build_dashboard_inner():
             if not px or not hi or not lo or hi <= lo:
                 continue
             vwap = ind.get("vwap"); pdh = ind.get("pdh"); pdl = ind.get("pdl")
+            sym = r["symbol"]
+            pwh = _levels["pwh"].get(sym); pwl = _levels["pwl"].get(sym)
+            pmh = _levels["pmh"].get(sym); pml = _levels["pml"].get(sym)
             vol = r.get("volume") or 0
             rng = hi - lo
             near_hi = px >= hi - rng * 0.15
             near_lo = px <= lo + rng * 0.15
             ev, kind, note = None, None, ""
-            if pdh and px > pdh and near_hi and r["chg"] > 0.5:
+            if pmh and px > pmh and near_hi and r["chg"] > 0.5:
+                ev, kind = "MONTH HIGH BREAK", "up"
+                note = f"Broke 1-month high {pmh} — strongest bullish structure"
+            elif pwh and px > pwh and near_hi and r["chg"] > 0.5:
+                ev, kind = "WEEK HIGH BREAK", "up"
+                note = f"Broke previous week high {pwh} with strength"
+            elif pml and px < pml and near_lo and r["chg"] < -0.5:
+                ev, kind = "MONTH LOW BREAK", "dn"
+                note = f"Broke 1-month low {pml} — strongest bearish structure"
+            elif pwl and px < pwl and near_lo and r["chg"] < -0.5:
+                ev, kind = "WEEK LOW BREAK", "dn"
+                note = f"Broke previous week low {pwl} with weakness"
+            elif pdh and px > pdh and near_hi and r["chg"] > 0.5:
                 ev, kind = "STRONG BREAKOUT", "up"
                 note = f"Broke previous day high {pdh} and holding near day high"
             elif near_hi and r["chg"] >= 1.5 and vol > 1e6 and (not vwap or px > vwap):
@@ -863,14 +907,17 @@ def _build_dashboard_inner():
                 ev, kind = "SUPPORT BREAK", "dn"
                 note = f"Losing VWAP support {round(vwap, 2)}"
             if ev:
+                _k = f"{r['symbol']}|{ev}"
+                _at = _struct_seen.setdefault(_k, _now_hm)
                 structure.append({
+                    "at": _at, "big": ev.startswith(("MONTH", "WEEK")),
                     "symbol": r["symbol"], "sector": r["sector"], "event": ev, "dir": kind,
                     "ltp": px, "chg": r["chg"], "volume": vol, "note": note,
                     "level": pdh if kind == "up" else (pdl or vwap),
                     "action": ("Watch for follow-through — CE side" if kind == "up"
                                else "Weakness confirmed — PE side"),
                 })
-        structure.sort(key=lambda x: -abs(x["chg"]))
+        structure.sort(key=lambda x: (not x["big"], -abs(x["chg"])))
         structure = structure[:15]
     except Exception as e:
         print("structure error:", e)
@@ -912,6 +959,14 @@ def _build_dashboard_inner():
             _m2 = _ist_now().hour * 60 + _ist_now().minute
             chain = OC.get_chain(opt, spot) if 540 <= _m2 <= 935 else None
             if chain:
+                # ── ellaa strike premium-um map-la pODu (tracker-kaaga) ──
+                for _sd, _key in (("CE", "strikes_ce"), ("PE", "strikes_pe")):
+                    for _k, _v in (chain.get(_key) or {}).items():
+                        try:
+                            if _v.get("ltp"):
+                                _opt_px[f"{opt} {int(float(_k))} {_sd}"] = float(_v["ltp"])
+                        except Exception:
+                            pass
                 if chain["bias"] == "BULLISH": bull += 2; why.append(f"{chain['writer']} (PCR {chain['pcr']})")
                 elif chain["bias"] == "BEARISH": bear += 2; why.append(f"{chain['writer']} (PCR {chain['pcr']})")
                 mp = chain.get("max_pain")
@@ -960,7 +1015,7 @@ def _build_dashboard_inner():
                     p_t1 = round(prem + dlt * move_t1, 2)
                     p_t2 = round(prem + dlt * move_t2, 2)
                     p_t3 = round(prem + dlt * move_t3, 2)
-                    p_sl = round(max(prem - dlt * move_sl, prem * 0.65), 2)   # cap loss ~35%
+                    p_sl = round(max(prem - dlt * move_sl, prem * 0.80), 2)   # cap loss ~20%
                     rr = round((p_t1 - prem) / max(prem - p_sl, 0.05), 2)
                     trade = {
                         "symbol": f"{opt} {int(pick)} {side}", "strike": int(pick), "type": side,
@@ -977,7 +1032,7 @@ def _build_dashboard_inner():
                                  f"{dlt} and ignore theta/IV change."),
                     }
 
-            if trade and conf >= 3 and 555 <= (_ist_now().hour * 60 + _ist_now().minute) <= 915:
+            if trade and conf >= 4 and 555 <= (_ist_now().hour * 60 + _ist_now().minute) <= 915:
                 IND.log_signal(trade["symbol"], "BUY", trade["entry"], trade["sl"],
                                trade["t1"], trade["t2"], trade["t3"],
                                score, f"{name} {side} · {', '.join(why[:3])}", "INDEX")
@@ -995,6 +1050,8 @@ def _build_dashboard_inner():
                             f"{'Bullish' if side=='CE' else 'Bearish'} setup — trade {side} on dips"),
             })
         index_setups.sort(key=lambda x: -x["score"])
+        if _opt_px:
+            IND.update_tracker(dict(_opt_px))   # fresh premium -> instant T1/T2/SL
     except Exception as e:
         print("index setup error:", e)
 
