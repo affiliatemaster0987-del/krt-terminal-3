@@ -533,3 +533,21 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .cal-date{font-size:.62rem;color:var(--dim)}
 .cal-note{flex-basis:100%;font-size:.62rem;color:var(--dim)}
 .cf-event{font-size:.64rem;color:var(--amber);margin:6px 0;font-weight:600}
+
+/* best option box + news badge on alerts */
+.bo-box{border:1px solid var(--amber);border-radius:12px;padding:11px;margin:10px 0;
+  background:rgba(245,184,64,.05)}
+.bo-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.bo-tag{background:var(--amber);color:#0d1119;font-size:.58rem;font-weight:800;
+  padding:3px 8px;border-radius:99px;letter-spacing:.06em}
+.bo-mn{font-size:.6rem;color:var(--dim);border:1px solid var(--line);padding:2px 6px;border-radius:5px}
+.bo-rr{margin-left:auto;font-size:.68rem;font-weight:700;color:var(--green)}
+.bo-meta{font-size:.62rem;color:var(--dim);margin-top:7px}
+.bo-note{font-size:.6rem;color:var(--dim);margin-top:5px;opacity:.8;line-height:1.5}
+.str-news{background:rgba(88,166,255,.15);color:#58a6ff;font-size:.55rem;
+  font-weight:800;padding:2px 6px;border-radius:5px;letter-spacing:.05em}
+
+.mood-hl{font-size:.62rem;font-weight:800;letter-spacing:.06em;padding:3px 9px;
+  border-radius:99px;margin:0 6px}
+.mood-hl.hl-pe{background:var(--red);color:#fff}
+.mood-hl.hl-ce{background:var(--green);color:#0d1119}
