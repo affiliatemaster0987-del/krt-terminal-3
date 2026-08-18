@@ -7,6 +7,7 @@ KRT — News AI 4.0
 No API key needed.
 """
 import time, threading, re
+import re
 import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
@@ -72,8 +73,14 @@ CRASH_EVENT = ["war", "airstrike", "missile attack", "invasion", "nuclear",
 MARKET_CTX = ["sensex", "nifty", "market", "markets", "stocks", "stock", "dalal street",
               "investors", "india", "indian", "rupee", "crude", "oil", "fii", "dii", "bse", "nse",
               "bank", "banks", "banking", "rbi", "sebi", "repo", "inflation", "gdp", "ipo",
-              "war", "tariff", "trade", "fed", "policy", "results", "profit", "revenue",
+              "tariff", "fed", "policy", "results", "profit", "revenue",
               "shares", "share", "equity", "sector", "index", "futures", "psu", "gst"]
+
+OFF_TOPIC = ["film", "movie", "actor", "actress", "bollywood", "cinema", "box office",
+             "trailer", "teaser", "song", "album", "celebrity", "wedding", "vacation",
+             "photos", "birthday", "fans", "co-star", "director", "web series", "netflix",
+             "cricket", "ipl", "match", "innings", "wicket", "goal", "tournament",
+             "recipe", "horoscope", "astrology", "zodiac", "weight loss", "skincare"]
 
 NOISE = ["bitcoin", "ethereum", "crypto", "buffett", "berkshire", "how to",
          "should you", "here's why you", "top 5 tips", "webinar", "podcast",
@@ -157,32 +164,61 @@ def _ago(h):
     return f"{int(h)}h ago"
 
 
+_WB = {}
+
+
+def _has(t, words):
+    """Word-boundary match. Substring match panna 'Batwara'-la 'war' maatikkum,
+    cinema news CRASH RISK aayidum. Adhaan munnadi nadandhadhu."""
+    for w in words:
+        rx = _WB.get(w)
+        if rx is None:
+            rx = _WB[w] = re.compile(r"(?<![a-z])" + re.escape(w) + r"(?![a-z])")
+        if rx.search(t):
+            return True
+    return False
+
+
+def _count(t, words):
+    n = 0
+    for w in words:
+        rx = _WB.get(w)
+        if rx is None:
+            rx = _WB[w] = re.compile(r"(?<![a-z])" + re.escape(w) + r"(?![a-z])")
+        if rx.search(t):
+            n += 1
+    return n
+
+
 def _is_noise(t):
-    return any(w in t for w in NOISE)
+    return _has(t, NOISE)
 
 
 def _india_relevant(t):
-    return any(w in t for w in MARKET_CTX) or any(s.lower() in t for s in STOCK_KEYWORDS)
+    return _has(t, MARKET_CTX) or any(s.lower() in t for s in STOCK_KEYWORDS)
 
 
 def _classify(title):
     t = title.lower()
-    ev = [w for w in CRASH_EVENT if w in t]
-    if ev and _india_relevant(t):
-        return "CRASH RISK", min(10, 8 + len(ev))
-    if any(w in t for w in COMPANY_RISK):
-        return "COMPANY RISK", min(10, 7 + sum(1 for w in COMPANY_RISK if w in t))
-    if any(w in t for w in ORDER_WORDS):
-        return "ORDER WIN", min(10, 7 + sum(1 for w in ORDER_WORDS if w in t))
-    if any(w in t for w in RESULT_WORDS):
+    if _has(t, OFF_TOPIC):                 # cinema / sports / lifestyle
+        return "NEUTRAL", 1
+    n_ev = _count(t, CRASH_EVENT)
+    # crash word irundhaale podhaadhu — market/index/stock context-um venum
+    if n_ev and _count(t, MARKET_CTX) >= 2:
+        return "CRASH RISK", min(10, 7 + n_ev)
+    if _has(t, COMPANY_RISK):
+        return "COMPANY RISK", min(10, 7 + _count(t, COMPANY_RISK))
+    if _has(t, ORDER_WORDS):
+        return "ORDER WIN", min(10, 7 + _count(t, ORDER_WORDS))
+    if _has(t, RESULT_WORDS):
         pos = sum(1 for w in ["profit jumps", "profit rises", "beats estimates",
                               "revenue rises", "dividend declared"] if w in t)
         neg = sum(1 for w in ["profit falls", "misses estimates", "loss", "revenue falls"] if w in t)
         return "RESULTS", min(10, 6 + max(pos, neg) * 2)
-    if any(w in t for w in STRONG_POS):
-        return "STRONG POSITIVE", min(10, 8 + sum(1 for w in STRONG_POS if w in t))
-    pos = sum(1 for w in POS_WORDS if w in t)
-    neg = sum(1 for w in NEG_WORDS if w in t)
+    if _has(t, STRONG_POS):
+        return "STRONG POSITIVE", min(10, 8 + _count(t, STRONG_POS))
+    pos = _count(t, POS_WORDS)
+    neg = _count(t, NEG_WORDS)
     if pos > neg:
         return "POSITIVE", min(9, 5 + pos * 2)
     if neg > pos:
@@ -196,7 +232,7 @@ def _affected(title):
 
 
 def _txt(node, *names):
-    """RSS-um Atom-um ஒரே madhiri padikka (rss.app Atom kudukkalam)."""
+    """Read RSS and Atom the same way (rss.app can serve either)."""
     for n in names:
         v = node.findtext(n)
         if v and v.strip():
@@ -318,7 +354,7 @@ def get_news_signals():
                 "ago": n["ago"], "source": n["source"], "link": n.get("link", "")}
         if tag == "CRASH RISK":
             crash.append({**base, "affect": _affect(n["impact"]),
-                          "action": "⚠ MARKET CRASH RISK — புது long வேண்டாம், SL tight"})
+                          "action": "MARKET CRASH RISK — avoid fresh longs, keep stops tight"})
             continue
         syms = [_ALIAS.get(s, s) for s in n.get("stocks", [])]
         real = [s for s in syms if s not in ("NIFTY", "SENSEX")]
@@ -339,7 +375,7 @@ def get_news_signals():
         elif tag in GOOD_TAGS and n["impact"] >= 7:
             row["verdict"] = ("🔥 JACKPOT — news + price confirm"
                               if me and (me.get("chg") or 0) > 0.5
-                              else "WAIT — technical confirm ஆகணும்")
+                              else "WAIT — needs technical confirmation")
             jackpot.append(row)
         elif tag in BAD_TAGS and n["impact"] >= 7:
             row["verdict"] = ("💀 DANGER — news + price falling"
