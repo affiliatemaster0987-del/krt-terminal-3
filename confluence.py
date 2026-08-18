@@ -165,10 +165,12 @@ def build(stocks, sectors, levels, news_map, candles, ist_min, results_map=None)
             lead_rank[r["symbol"]] = i + 1
 
     out = []
+    diag = {"not_ready": 0, "no_vwap": 0, "rsi_out": 0, "too_thin": 0, "best": 0}
     for r in stocks:
         ind = r.get("ind") or {}
         px = r.get("ltp") or 0
         if not px or not ind.get("ready"):
+            diag["not_ready"] += 1
             continue
 
         side = "BUY" if r["chg"] > 0 else "SELL"
@@ -228,13 +230,20 @@ def build(stocks, sectors, levels, news_map, candles, ist_min, results_map=None)
         if f["month"]:
             score += 1
             raw += WEIGHT["month"]
-        if not f["rsi_ok"] or not f["vwap"]:
-            continue                       # both of these are mandatory
+        diag["best"] = max(diag["best"], score)
+        if not f["vwap"]:
+            diag["no_vwap"] += 1
+            continue                       # mandatory
+        if not f["rsi_ok"]:
+            diag["rsi_out"] += 1
+            continue                       # mandatory
         if score < MIN_SCORE:
+            diag["too_thin"] += 1
             continue
 
         pct, letter, label, gnote = _grade(raw)
         if letter == "C":
+            diag["too_thin"] += 1
             continue
         setup, why = _classify(f, rvol)
         atr = ind.get("atr") or px * 0.006
@@ -279,4 +288,19 @@ def build(stocks, sectors, levels, news_map, candles, ist_min, results_map=None)
         })
 
     out.sort(key=lambda x: (-x["pts"], -x["score"]))
-    return out[:8]
+    return out[:8], diag
+
+
+def diagnose(stocks, levels, candles):
+    """When nothing shows, say what is missing rather than just 'SCANNING'."""
+    total = len(stocks)
+    ready = sum(1 for r in stocks if (r.get("ind") or {}).get("ready"))
+    lv = levels or {}
+    return {
+        "total": total,
+        "ready": ready,
+        "pdh": len(lv.get("pdh") or {}),
+        "pwh": len(lv.get("pwh") or {}),
+        "avgvol": len(lv.get("avgvol") or {}),
+        "candles": sum(1 for v in (candles or {}).values() if len(v) >= 20),
+    }
