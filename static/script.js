@@ -199,6 +199,7 @@ $('dgSendAll') && ($('dgSendAll').onclick=()=>{ if(dangers.length) openWA('💀 
 /* ---------- signal tracker (v5) ---------- */
 const STCLS={'LIVE':'st-live','T1 HIT':'st-t1','T2 HIT':'st-t1','TARGET COMPLETED':'st-done','SL HIT':'st-sl','EXPIRED':'st-exp'};
 function accBox(a,label){
+  a = a || {};
   const p=v=>v==null?'—':v+'%';
   return `<div class="acc-card"><div class="acc-h">${label}</div>
     <div class="acc-big ${a.accuracy>=60?'up':a.accuracy!=null?'dn':''}">${p(a.accuracy)}</div>
@@ -366,6 +367,7 @@ function renderResultsDiary(list){
     </div>`).join('')
     : `<div class="empty">No results scheduled in the next 10 days for stocks in this universe</div>`;
 }
+
 /* ---------- breadth ---------- */
 function renderBreadth(b){
   if(!b||!$('breadthBox'))return;
@@ -630,6 +632,7 @@ function renderSession(sess, ib){
     $('idxBiasPill').innerHTML=`📊 INDEX ${ib.bias} <span class="nt2">avg ${ib.avg>=0?'+':''}${ib.avg}%</span>`;
   }
 }
+
 /* ---------- call of the day ---------- */
 let codData=null;
 function renderCOD(c){
@@ -743,12 +746,12 @@ function renderSectors(sectors){
   $('strongSectors').innerHTML=strong.map(s=>`
     <div class="sec-row">
       <div class="sec-head"><b>${s.sector}</b><span class="up">▲ ${s.chg}%</span></div>
-      <div class="sec-stocks">${s.top.map(t=>`<span class="s-chip up">${t.symbol} ${t.chg>=0?'+':''}${t.chg}%</span>`).join('')}</div>
+      <div class="sec-stocks">${(s.top||[]).map(t=>`<span class="s-chip up">${t.symbol} ${t.chg>=0?'+':''}${t.chg}%</span>`).join('')}</div>
     </div>`).join('');
   $('weakSectors').innerHTML=weak.map(s=>`
     <div class="sec-row">
       <div class="sec-head"><b>${s.sector}</b><span class="${s.chg>=0?'up':'dn'}">${s.chg>=0?'▲':'▼'} ${Math.abs(s.chg)}%</span></div>
-      <div class="sec-stocks">${s.weak.map(t=>`<span class="s-chip dn">${t.symbol} ${t.chg}%</span>`).join('')}</div>
+      <div class="sec-stocks">${(s.weak||[]).map(t=>`<span class="s-chip dn">${t.symbol} ${t.chg}%</span>`).join('')}</div>
     </div>`).join('');
 }
 
@@ -848,8 +851,20 @@ $('ckSave') && ($('ckSave').onclick=()=>{ store.set('ckUrl',$('ckUrl').value.tri
 
 /* ═══════════ MAIN LOOP ═══════════ */
 async function pull(u){ try{ const r=await fetch(u); return r.ok? await r.json():null; }catch(e){ return null; } }
+function safe(fn, name, ...args){
+  try{ fn(...args); }
+  catch(e){ console.error('[KRT] '+name+' failed:', e); (window.__krtFails=window.__krtFails||[]).push(name+': '+e.message); }
+}
+function apiDown(msg){
+  const b=$('crashBanner'); if(!b) return;
+  b.style.display='block';
+  b.innerHTML='🔌 <b>BACKEND NOT RESPONDING</b> — '+msg+'. Check the Flask server / Render logs.';
+}
 async function refresh(){
   const d=await pull(CONFIG.DASHBOARD);
+  if(!d){ apiDown('/api/dashboard returned nothing'); return; }
+  if(d.error){ apiDown('/api/dashboard error: '+d.error); return; }
+  window.__krtFails=[];
   if(d && !d.error){
     // indices
     if(d.indices) $('idxStrip').innerHTML=d.indices.map(ix=>{
@@ -865,19 +880,19 @@ async function refresh(){
     const rank={}; sectors.forEach((s,i)=>rank[s.sector]=i+1);
 
     window.__last=uniq;
-    renderStatus(d.status);
-    renderConfluence(d.confluence, d.confl_diag);
-    renderAnnouncements(d.announcements);
-    renderResultsDiary(d.results_diary);
-    renderBreadth(d.breadth);
-    orRows(d.or15,'or15List','or15Tag','15-min High');
-    renderMood(d.mood);
-    renderTracker(d.tracker, d.ind_ready);
-    renderOptions(uniq, rank, sectors.length);
-    renderSession(d.session, d.index_bias);
-    renderIdxSetups(d.index_setups);
-    renderStructure(d.structure);
-    renderTradeLog(d.tracker);
+    safe(renderStatus,'renderStatus',d.status);
+    safe(renderConfluence,'renderConfluence',d.confluence, d.confl_diag);
+    safe(renderAnnouncements,'renderAnnouncements',d.announcements);
+    safe(renderResultsDiary,'renderResultsDiary',d.results_diary);
+    safe(renderBreadth,'renderBreadth',d.breadth);
+    safe(orRows,'orRows',d.or5||d.or15,'or5List','or5Tag','5-min High');
+    safe(renderMood,'renderMood',d.mood);
+    safe(renderTracker,'renderTracker',d.tracker, d.ind_ready);
+    safe(renderOptions,'renderOptions',uniq, rank, sectors.length);
+    safe(renderSession,'renderSession',d.session, d.index_bias);
+    safe(renderIdxSetups,'renderIdxSetups',d.index_setups);
+    safe(renderStructure,'renderStructure',d.structure);
+    safe(renderTradeLog,'renderTradeLog',d.tracker);
     (d.structure||[]).forEach(x=>{
       const k='st:'+x.symbol+x.event; if(seen.has(k))return; seen.add(k);
       pushAlert({symbol:x.symbol, side:x.dir==='up'?'BUY':'SELL',
@@ -885,16 +900,16 @@ async function refresh(){
         reason:`<b>${x.at||''} · ${x.event}</b> — ${x.note}`,
         detail:`₹${fmt(x.ltp)} (${x.chg>=0?'+':''}${x.chg}%) · ${x.sector} · ${x.action}`});
     });
-    renderCOD(d.call_day);
-    renderZones(d.zones);
-    renderPreopen(d.preopen);
-    stockRows(d.gainers||[],'gainT');
-    stockRows(d.losers||[],'loseT');
-    renderChartink(d.chartink);
-    buildJackpots(uniq,brk,rank);
-    buildDangers(uniq,brk,rank,sectors.length);
-    renderSectors(sectors);
-    renderAlerts(d.alerts,d.chartink);
+    safe(renderCOD,'renderCOD',d.call_day);
+    safe(renderZones,'renderZones',d.zones);
+    safe(renderPreopen,'renderPreopen',d.preopen);
+    safe(stockRows,'stockRows',d.gainers||[],'gainT');
+    safe(stockRows,'stockRows',d.losers||[],'loseT');
+    safe(renderChartink,'renderChartink',d.chartink);
+    safe(buildJackpots,'buildJackpots',uniq,brk,rank);
+    safe(buildDangers,'buildDangers',uniq,brk,rank,sectors.length);
+    safe(renderSectors,'renderSectors',sectors);
+    safe(renderAlerts,'renderAlerts',d.alerts,d.chartink);
 
     const ups=uniq.filter(r=>r.chg>0).length;
     renderScore(uniq.length? Math.round(35+(ups/uniq.length)*55) : 50);
@@ -911,3 +926,4 @@ async function refreshNews(){
 refresh(); refreshNews();
 setInterval(refresh, CONFIG.REFRESH_MS);
 setInterval(refreshNews, 90000);          // news every 90s — much lighter
+
