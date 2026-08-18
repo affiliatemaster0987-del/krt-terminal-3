@@ -14,6 +14,7 @@ import indicators as IND
 import option_chain as OC
 import confluence as CONF
 import corporate as CORP
+import optionpick as OPT
 from datetime import datetime, timedelta
 
 # ───────────────────────── INDICES (fixed tokens) ─────────────────────────
@@ -108,6 +109,10 @@ _levels = {"pdh": {}, "pdl": {}, "pwh": {}, "pwl": {}, "pmh": {}, "pml": {},
            "avgvol": {}, "orh": {}, "day": "", "or_day": ""}
 # live option premium map: {"FINNIFTY 26150 CE": 352.5, ...} — tracker idha use pannum
 _opt_px = {}
+# Polling only sees the last price. If a premium dips through the stop and
+# recovers between two polls, the hit is missed and the call sits on RUNNING
+# forever. Track the low/high seen so the tracker can judge honestly.
+_opt_lo, _opt_hi = {}, {}
 _struct_seen = {}          # {"BHEL|BREAKOUT": "13:28"} — alert first-seen time
 _preopen = {"day": "", "rows": [], "final": False}
 _diag = {"source": "angel", "tokens": 0, "pdh_ok": 0, "orh_ok": 0, "last_error": "", "sample_error": "",
@@ -487,6 +492,7 @@ def _bg_worker():
     while True:
         try:
             _load_tokens()
+            OC.set_universe(list(UNIVERSE.keys()))
             OC._load_master()          # non-blocking; warms in background
             _warm_levels()
             if len(_levels["pdh"]) < 20:
@@ -557,8 +563,13 @@ def _index_bias(indices):
     return {"bias": "FLAT", "avg": round(avg, 2), "long": 0, "short": 0}
 
 
-def _market_mood(stocks, indices):
-    """FEAR / HAPPY / CONFUSED / GREED — breadth + VIX + index move."""
+def _market_mood(stocks, indices, crash=0, news_neg=0):
+    """FEAR / HAPPY / CONFUSED / GREED — breadth, VIX, index move and news.
+
+    Breadth alone is backward looking. A crash headline can turn a merely
+    weak tape into one where fresh longs are the wrong side entirely, so the
+    news count is folded in rather than sitting in a separate panel.
+    """
     if not stocks:
         return {"mood": "UNKNOWN", "emoji": "❓", "note": "no data", "breadth": 0}
     ups = sum(1 for r in stocks if r["chg"] > 0)
@@ -579,8 +590,32 @@ def _market_mood(stocks, indices):
         m, e, note = "GREED", "🤑", "Euphoria — trail SL, avoid chasing"
     else:
         m, e, note = "MIXED", "🙂", "Stock-specific market — follow strong sectors"
+
+    # news override — a live crash headline outranks a merely soft tape
+    focus, alert = None, None
+    if crash and breadth < 50:
+        m, e = "FEAR", "😱"
+        note = "Crash headline plus weak breadth — do not buy, PE side only"
+        focus, alert = "PE", "crash"
+    elif crash:
+        note += " · crash headline live, keep stops tight"
+        focus, alert = "PE", "crash"
+    elif news_neg >= 3 and breadth < 45:
+        m, e = "WEAK", "😟"
+        note = "Several negative headlines with weak breadth — favour PE side"
+        focus = "PE"
+    elif m in ("HAPPY", "GREED"):
+        focus = "CE"
+    elif m in ("FEAR", "WEAK"):
+        focus = "PE"
+
     return {"mood": m, "emoji": e, "note": note, "breadth": breadth,
-            "vix_chg": vix_chg, "nifty_chg": nf}
+            "vix_chg": vix_chg, "nifty_chg": nf,
+            "focus": focus, "alert": alert,
+            "crash": crash, "neg_news": news_neg,
+            "headline": ("DO NOT BUY — FOCUS PE" if focus == "PE" and m == "FEAR"
+                         else "FAVOUR PE SIDE" if focus == "PE"
+                         else "FAVOUR CE SIDE" if focus == "CE" else None)}
 
 
 _dash = {"data": None, "ts": 0}
@@ -873,7 +908,7 @@ def _build_dashboard_inner():
 
     # ── STRUCTURE ALERTS: breakout / breakdown / support break ──
     # ── CONFLUENCE ENGINE (👑 super setups) ──
-    confl = []
+    confl, cdiag = [], {}
     try:
         import news as NEWS
         _uni = set(UNIVERSE.keys())
@@ -882,11 +917,20 @@ def _build_dashboard_inner():
         # so they override where both exist
         _nmap.update(CORP.sentiment_map(_uni))
         _cmin = _ist_now().hour * 60 + _ist_now().minute
-        confl = CONF.build(stocks, sectors, _levels, _nmap,
-                           dict(IND.CANDLES), _cmin,
-                           results_map=CORP.results_soon(_uni))
+        confl, cdiag = CONF.build(stocks, sectors, _levels, _nmap,
+                                  dict(IND.CANDLES), _cmin,
+                                  results_map=CORP.results_soon(_uni))
+        cdiag.update(CONF.diagnose(stocks, _levels, IND.CANDLES))
     except Exception as e:
         print("confluence error:", e)
+
+    # ── news signals feed the mood ──
+    _nsig = {}
+    try:
+        import news as _N
+        _nsig = _N.get_news_signals() or {}
+    except Exception as e:
+        print("news signal error:", e)
 
     # ── CORPORATE FILINGS + RESULTS DIARY ──
     announcements, results_diary = [], []
@@ -945,15 +989,21 @@ def _build_dashboard_inner():
             if ev:
                 _k = f"{r['symbol']}|{ev}"
                 _at = _struct_seen.setdefault(_k, _now_hm)
+                _nv = _nmap.get(r["symbol"], 0)
+                # a breakout with a matching catalyst is worth far more than
+                # a breakout on its own, so it sorts to the top
+                _newsy = bool(_nv) and ((_nv > 0) == (kind == "up"))
                 structure.append({
                     "at": _at, "big": ev.startswith(("MONTH", "WEEK")),
+                    "news": _newsy,
                     "symbol": r["symbol"], "sector": r["sector"], "event": ev, "dir": kind,
                     "ltp": px, "chg": r["chg"], "volume": vol, "note": note,
                     "level": pdh if kind == "up" else (pdl or vwap),
                     "action": ("Watch for follow-through — CE side" if kind == "up"
                                else "Weakness confirmed — PE side"),
                 })
-        structure.sort(key=lambda x: (not x["big"], -abs(x["chg"])))
+        structure.sort(key=lambda x: (not x.get("news"), not x["big"],
+                                      -abs(x["chg"])))
         structure = structure[:15]
     except Exception as e:
         print("structure error:", e)
@@ -1000,7 +1050,15 @@ def _build_dashboard_inner():
                     for _k, _v in (chain.get(_key) or {}).items():
                         try:
                             if _v.get("ltp"):
-                                _opt_px[f"{opt} {int(float(_k))} {_sd}"] = float(_v["ltp"])
+                                _sym = f"{opt} {int(float(_k))} {_sd}"
+                                _p = float(_v["ltp"])
+                                _opt_px[_sym] = _p
+                                _lo = _v.get("low") or _v.get("dayLow")
+                                _hi = _v.get("high") or _v.get("dayHigh")
+                                _lo = float(_lo) if _lo else _p
+                                _hi = float(_hi) if _hi else _p
+                                _opt_lo[_sym] = min(_opt_lo.get(_sym, _lo), _lo, _p)
+                                _opt_hi[_sym] = max(_opt_hi.get(_sym, _hi), _hi, _p)
                         except Exception:
                             pass
                 if chain["bias"] == "BULLISH": bull += 2; why.append(f"{chain['writer']} (PCR {chain['pcr']})")
@@ -1048,9 +1106,12 @@ def _build_dashboard_inner():
                     dlt = OC.est_delta(spot, pick, side, chain.get("step") or step)
                     move_t1 = abs(t1 - spot); move_t2 = abs(t2 - spot)
                     move_t3 = abs(t3 - spot); move_sl = abs(sl_lvl - spot)
-                    p_t1 = round(prem + dlt * move_t1, 2)
-                    p_t2 = round(prem + dlt * move_t2, 2)
-                    p_t3 = round(prem + dlt * move_t3, 2)
+                    # An OTM option mapped against a far spot target produces
+                    # targets like +216%, which no intraday option delivers.
+                    # Cap them at what an index option realistically does.
+                    p_t1 = round(min(prem + dlt * move_t1, prem * 1.30), 2)
+                    p_t2 = round(min(prem + dlt * move_t2, prem * 1.60), 2)
+                    p_t3 = round(min(prem + dlt * move_t3, prem * 2.00), 2)
                     p_sl = round(max(prem - dlt * move_sl, prem * 0.80), 2)   # cap loss ~20%
                     rr = round((p_t1 - prem) / max(prem - p_sl, 0.05), 2)
                     trade = {
@@ -1087,7 +1148,14 @@ def _build_dashboard_inner():
             })
         index_setups.sort(key=lambda x: -x["score"])
         if _opt_px:
-            IND.update_tracker(dict(_opt_px))   # fresh premium -> instant T1/T2/SL
+            # Stop first, then target. Feeding the low before the high means a
+            # premium that touched the stop is reported as a stop, even if it
+            # later reached the target — which is what actually happened to you.
+            if _opt_lo:
+                IND.update_tracker(dict(_opt_lo))
+            if _opt_hi:
+                IND.update_tracker(dict(_opt_hi))
+            IND.update_tracker(dict(_opt_px))
     except Exception as e:
         print("index setup error:", e)
 
@@ -1125,7 +1193,22 @@ def _build_dashboard_inner():
             best = {**best, "score": min(99, max(20, best["score"] + oc_delta))}
             if oc_tag:
                 best["why"] = best["why"] + " · " + oc_tag
+            zmid = (best.get("zone_lo", px) + best.get("zone_hi", px)) / 2
+            opt = None
+            try:
+                opt = OPT.pick(chain, px, "CE" if best["side"] == "BUY" else "PE",
+                               best.get("sl"), best.get("t1"), best.get("t2"),
+                               best.get("t3"), entry_spot=zmid)
+                if opt:
+                    _opt_px.setdefault(opt["symbol"], opt["entry"])
+                    IND.log_signal(opt["symbol"], "BUY", opt["entry"], opt["sl"],
+                                   opt["t1"], opt["t2"], opt["t3"], best["score"],
+                                   f"{best['symbol']} {best['side']} · {opt['why']}",
+                                   "OPTION")
+            except Exception as e:
+                print("cod option pick error:", e)
             call_day = {**best, "view": view, "strikes": strikes, "atm": int(atm),
+                        "best_option": opt,
                         "step": step, "chain": chain,
                         "plan": ("Enter only when price trades inside the zone. "
                                  "Book part at T1, trail rest. Exit all if SL breaks.")}
@@ -1147,6 +1230,7 @@ def _build_dashboard_inner():
     return {
         "status": mstat, "breadth": breadth, "confluence": confl,
         "announcements": announcements, "results_diary": results_diary,
+        "confl_diag": cdiag,
         "or5": or5[:12], "or15": or15[:12],
         "mode": mode, "indices": indices, "gainers": gainers, "losers": losers,
         "volume": by_vol, "alerts": alerts, "sectors": sectors,
@@ -1155,7 +1239,9 @@ def _build_dashboard_inner():
         "preopen": {"up": [x for x in _preopen["rows"] if x["gap"] > 0][:12],
                     "down": [x for x in _preopen["rows"] if x["gap"] < 0][:12],
                     "final": _preopen["final"], "count": len(_preopen["rows"])},
-        "mood": _market_mood(stocks, indices),
+        "mood": _market_mood(stocks, indices,
+                             crash=len((_nsig or {}).get("market_crash") or []),
+                             news_neg=len((_nsig or {}).get("danger") or [])),
         "global": get_global_cues(),
         "structure": structure,
         "index_setups": index_setups,
