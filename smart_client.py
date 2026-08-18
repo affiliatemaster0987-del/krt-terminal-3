@@ -618,18 +618,149 @@ def _market_mood(stocks, indices, crash=0, news_neg=0):
                          else "FAVOUR CE SIDE" if focus == "CE" else None)}
 
 
-_dash = {"data": None, "ts": 0}
-DASH_CACHE_SEC = 6
+_dash = {
+    "data": None,
+    "ts": 0,
+    "building": False,
+    "error": "",
+}
+_dash_lock = threading.Lock()
+DASH_CACHE_SEC = 20
+
+
+def _fallback_dashboard():
+    """
+    Instant cold-start response.
+
+    IMPORTANT: this function must never make an external network/API call.
+    The browser gets this payload immediately while the real dashboard is
+    being built in a background thread.
+    """
+    rows = _fetch_demo()
+    indices = [r for r in rows if r["symbol"] in INDICES]
+    stocks = [r for r in rows if r["symbol"] not in INDICES]
+
+    adv = sum(1 for r in stocks if r.get("chg", 0) > 0)
+    dec = sum(1 for r in stocks if r.get("chg", 0) < 0)
+    unch = len(stocks) - adv - dec
+
+    n = _ist_now()
+    mins = n.hour * 60 + n.minute
+    if mins < 555:
+        mstat = {"state": "PRE", "text": "MARKET OPENS AT 09:15 AM",
+                 "sub": "Pre-open 09:00 - 09:15"}
+    elif mins <= 930:
+        mstat = {"state": "OPEN", "text": "MARKET OPEN",
+                 "sub": "09:15 AM - 03:30 PM"}
+    else:
+        mstat = {"state": "CLOSED", "text": "MARKET CLOSED",
+                 "sub": "Next open: 09:15 AM"}
+
+    return {
+        "status": mstat,
+        "breadth": {
+            "adv": adv, "dec": dec, "unch": unch,
+            "above_vwap": None, "below_vwap": None,
+            "bias": ("Bullish" if adv > dec * 1.3 else
+                     "Bearish" if dec > adv * 1.3 else "Neutral"),
+        },
+        "confluence": [],
+        "announcements": [],
+        "results_diary": [],
+        "confl_diag": {},
+        "or5": [],
+        "or15": [],
+        "mode": "warming",
+        "indices": indices,
+        "gainers": sorted(stocks, key=lambda r: r.get("chg", 0), reverse=True)[:25],
+        "losers": sorted(stocks, key=lambda r: r.get("chg", 0))[:25],
+        "volume": [],
+        "alerts": [],
+        "sectors": [],
+        "breaks": {"pdh": [], "pwh": [], "or5": [], "pdl": []},
+        "preopen": {"up": [], "down": [], "final": False, "count": 0},
+        "mood": {
+            "mood": "WARMING",
+            "emoji": "⏳",
+            "note": "Live market engine is loading",
+            "breadth": 0,
+            "focus": None,
+            "alert": None,
+        },
+        "global": [],
+        "structure": [],
+        "index_setups": [],
+        "session": _session_quality(),
+        "index_bias": {"bias": "FLAT", "avg": 0, "long": 0, "short": 0},
+        "zones": [],
+        "call_day": None,
+        "tracker": IND.stats(),
+        "ind_ready": 0,
+        "levels_ready": False,
+        "levels_diag": {
+            **_diag,
+            "pdh": len(_levels["pdh"]),
+            "pwh": len(_levels["pwh"]),
+            "orh": len(_levels["orh"]),
+            "dashboard_error": _dash.get("error", ""),
+        },
+        "universe": len(stocks),
+        "updated": time.strftime("%H:%M:%S", time.gmtime(time.time() + 19800)),
+    }
+
+
+def _refresh_dashboard_background():
+    """Build the heavy dashboard without blocking /api/dashboard."""
+    try:
+        d = _build_dashboard_inner()
+        with _dash_lock:
+            _dash["data"] = d
+            _dash["ts"] = time.time()
+            _dash["error"] = ""
+    except BaseException as e:
+        # Gunicorn/SystemExit or an unexpected provider error must not leave
+        # the dashboard permanently stuck in `building=True`.
+        print("dashboard background error:", repr(e))
+        with _dash_lock:
+            _dash["error"] = str(e)[:300]
+    finally:
+        with _dash_lock:
+            _dash["building"] = False
 
 
 def build_dashboard():
-    """Cached wrapper — heavy work runs at most once every DASH_CACHE_SEC."""
+    """
+    Non-blocking dashboard wrapper.
+
+    Heavy SmartAPI / option-chain / news / Yahoo work is performed in a
+    background thread. The HTTP request always receives either the latest
+    cached dashboard or a fast local fallback payload.
+    """
     now = time.time()
-    if _dash["data"] and now - _dash["ts"] < DASH_CACHE_SEC:
-        return _dash["data"]
-    d = _build_dashboard_inner()
-    _dash.update(data=d, ts=now)
-    return d
+
+    with _dash_lock:
+        data = _dash["data"]
+        ts = _dash["ts"]
+        building = _dash["building"]
+
+    if data is not None and now - ts < DASH_CACHE_SEC:
+        return data
+
+    if not building:
+        with _dash_lock:
+            if not _dash["building"]:
+                _dash["building"] = True
+                threading.Thread(
+                    target=_refresh_dashboard_background,
+                    daemon=True,
+                    name="dashboard-refresh",
+                ).start()
+
+    # Never make the browser wait for external providers.
+    if data is not None:
+        return data
+
+    return _fallback_dashboard()
 
 
 def _build_dashboard_inner():
@@ -912,10 +1043,18 @@ def _build_dashboard_inner():
     try:
         import news as NEWS
         _uni = set(UNIVERSE.keys())
-        _nmap = NEWS.stock_sentiment()
-        # exchange filings are a harder catalyst than an RSS headline,
-        # so they override where both exist
-        _nmap.update(CORP.sentiment_map(_uni))
+        _raw_nmap = NEWS.stock_sentiment()
+        _nmap = _raw_nmap if isinstance(_raw_nmap, dict) else {}
+        if not isinstance(_raw_nmap, dict):
+            print("news sentiment invalid type:", type(_raw_nmap).__name__)
+
+        # Exchange filings are a harder catalyst than an RSS headline,
+        # so they override where both exist. Guard provider return types.
+        _corp_sent = CORP.sentiment_map(_uni)
+        if isinstance(_corp_sent, dict):
+            _nmap.update(_corp_sent)
+        elif _corp_sent is not None:
+            print("corporate sentiment invalid type:", type(_corp_sent).__name__)
         _cmin = _ist_now().hour * 60 + _ist_now().minute
         confl, cdiag = CONF.build(stocks, sectors, _levels, _nmap,
                                   dict(IND.CANDLES), _cmin,
@@ -928,7 +1067,13 @@ def _build_dashboard_inner():
     _nsig = {}
     try:
         import news as _N
-        _nsig = _N.get_news_signals() or {}
+        _raw_nsig = _N.get_news_signals()
+        if isinstance(_raw_nsig, dict):
+            _nsig = _raw_nsig
+        else:
+            if _raw_nsig is not None:
+                print("news signals invalid type:", type(_raw_nsig).__name__)
+            _nsig = {}
     except Exception as e:
         print("news signal error:", e)
 
