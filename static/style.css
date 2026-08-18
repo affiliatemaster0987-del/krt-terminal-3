@@ -509,3 +509,27 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .cf-no{font-size:.6rem;padding:3px 7px;border-radius:6px;color:var(--dim);
   border:1px solid var(--line);opacity:.55}
 .cf-avoid{font-size:.62rem;color:var(--red);margin:7px 0;letter-spacing:.02em}
+
+.cf-grade{font-weight:900;font-size:.82rem;padding:2px 9px;border-radius:7px;letter-spacing:.04em}
+.cf-grade.gAp{background:var(--amber);color:#0d1119}
+.cf-grade.gA{background:rgba(22,214,122,.18);color:var(--green);border:1px solid var(--green)}
+.cf-grade.gBp{background:rgba(245,184,64,.14);color:var(--amber);border:1px solid rgba(245,184,64,.4)}
+.cf-grade.gB{color:var(--dim);border:1px solid var(--line)}
+.cf-label{font-size:.6rem;letter-spacing:.08em;color:var(--dim);font-weight:700}
+
+/* exchange filings + results diary */
+.ann-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;
+  border-bottom:1px solid var(--line);font-size:.7rem}
+.ann-row.aup{border-left:3px solid var(--green)}
+.ann-row.adn{border-left:3px solid var(--red)}
+.ann-at{font-size:.6rem;color:var(--dim);min-width:76px}
+.ann-imp{font-size:.6rem;color:var(--amber);font-weight:700}
+.ann-sub{flex-basis:100%;color:var(--dim);font-size:.64rem;line-height:1.45}
+.cal-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;
+  border-bottom:1px solid var(--line);font-size:.7rem}
+.cal-row.cal0{border-left:3px solid var(--red);background:rgba(255,77,94,.05)}
+.cal-row.cal1{border-left:3px solid var(--amber)}
+.cal-when{font-size:.6rem;font-weight:800;letter-spacing:.06em;min-width:78px;color:var(--amber)}
+.cal-date{font-size:.62rem;color:var(--dim)}
+.cal-note{flex-basis:100%;font-size:.62rem;color:var(--dim)}
+.cf-event{font-size:.64rem;color:var(--amber);margin:6px 0;font-weight:600}
