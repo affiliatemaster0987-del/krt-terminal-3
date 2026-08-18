@@ -256,11 +256,13 @@ function renderConfluence(list){
   conflData=list||[];
   const sup=conflData.filter(c=>c.super).length;
   $('conflTag').textContent = conflData.length
-      ? `${conflData.length} SETUPS${sup?' · '+sup+' 👑 SUPER':''}` : 'SCANNING';
+      ? `${conflData.length} SETUPS${sup?' · '+sup+' A+':''}` : 'SCANNING';
   $('conflBox').innerHTML = conflData.length? conflData.map((c,i)=>`
     <div class="cf-card ${c.side==='BUY'?'cfb':'cfs'} ${c.super?'cfsuper':''}">
       <div class="cf-top">
-        ${c.super?'<span class="cf-crown">👑 SUPER CONFLUENCE</span>':''}
+        ${c.super?'<span class="cf-crown">SUPER CONFLUENCE</span>':''}
+        <span class="cf-grade g${c.grade.replace('+','p')}">${c.grade}</span>
+        <span class="cf-label">${c.label}</span>
         <span class="cf-setup">${c.setup}</span>
         <span class="cf-pts">${c.pts}<small>/10</small></span>
       </div>
@@ -270,29 +272,66 @@ function renderConfluence(list){
         <span class="${c.chg>=0?'up':'dn'}">₹${fmt(c.ltp)} ${c.chg>=0?'▲':'▼'}${Math.abs(c.chg)}%</span>
         <span class="cf-score">${c.score}<small>/100</small></span>
       </div>
-      <div class="cf-why">${c.why}</div>
+      <div class="cf-why">${c.why} · <b>${c.gnote}</b></div>
       <div class="cf-checks">
         ${c.checks.map(x=>`<span class="cf-ok">✅ ${x}</span>`).join('')}
         ${c.misses.map(x=>`<span class="cf-no">⬜ ${x}</span>`).join('')}
       </div>
       <div class="sig-lv"><span class="e">E ${c.entry}</span><span class="s">SL ${c.sl}</span>
         <span class="t">T1 ${c.t1}</span><span class="t">T2 ${c.t2}</span><span class="t">T3 ${c.t3}</span></div>
-      <div class="cf-avoid">⚠ AVOID IF: ${c.avoid}${c.late?' · ⏰ LATE — 2:30 mudinjiduchu, size kammi':''}</div>
+      ${c.event?`<div class="cf-event">📅 ${c.event}</div>`:''}
+      <div class="cf-avoid">⚠ AVOID IF: ${c.avoid}${c.late?' · LATE — after 2:30 pm, use half size':''}</div>
       <div class="sig-foot"><span>${c.rvol?c.rvol+'x vol · ':''}RSI ${c.rsi} · ADX ${c.adx}</span>
         <button class="btn wa mini" onclick="waConfl(${i})">🟢 WA</button></div>
     </div>`).join('')
-    : `<div class="empty">No high-confluence setup yet — 6+ confirmations vandha mattum inga kaattum</div>`;
+    : `<div class="empty">No high-confluence setup right now — a stock only appears here once 6 or more confirmations line up</div>`;
 }
 function waConfl(i){
   const c=conflData[i]; if(!c)return;
-  openWA(`${c.super?'👑 KRT SUPER CONFLUENCE':'🎯 KRT CONFLUENCE'}\n\n${c.symbol} — ${c.side} — ${c.score}/100\n${c.setup} (${c.pts}/10)\n\n${c.checks.map(x=>'✅ '+x).join('\n')}\n\nEntry: ${c.entry}\nSL: ${c.sl}\nT1: ${c.t1} | T2: ${c.t2} | T3: ${c.t3}\n\n⚠ AVOID IF: ${c.avoid}\n\n⚠ Educational only. Not investment advice.`);
+  openWA(`KRT CONFLUENCE${c.super?' — SUPER SETUP':''}\n\n${c.symbol} — ${c.side}\nGrade ${c.grade} · ${c.label} · ${c.score}/100\n${c.setup} (${c.pts}/10 confirmations)\n\n${c.checks.map(x=>'✅ '+x).join('\n')}\n\nEntry: ${c.entry}\nSL: ${c.sl}\nT1: ${c.t1} | T2: ${c.t2} | T3: ${c.t3}\n\n⚠ AVOID IF: ${c.avoid}\n\n⚠ Educational only. Not investment advice.`);
 }
 $('conflSend') && ($('conflSend').onclick=()=>{
   if(!conflData.length)return;
-  openWA('👑 KRT CONFLUENCE SETUPS\n\n'+conflData.slice(0,5).map(c=>
-    `${c.super?'👑 ':''}${c.symbol} ${c.side} ${c.pts}/10 · ${c.setup}\nE ${c.entry} · SL ${c.sl} · T1 ${c.t1}`).join('\n\n')+
+  openWA('KRT CONFLUENCE SETUPS\n\n'+conflData.slice(0,5).map(c=>
+    `${c.symbol} ${c.side} · ${c.grade} ${c.label} · ${c.setup}\nE ${c.entry} · SL ${c.sl} · T1 ${c.t1}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+
+/* ---------- corporate filings + results diary ---------- */
+const ANNCLS={'ORDER WIN':'up','APPROVAL':'up','EXPANSION':'up','CASH':'up',
+  'FAVOURABLE ORDER':'up','ORDER LOSS':'dn','REGULATORY':'dn','STRESS':'dn',
+  'RESULTS':'nt','FILING':'nt'};
+function renderAnnouncements(list){
+  if(!$('annBox'))return;
+  if(!changed('ann', list)) return;
+  const L=list||[];
+  $('annTag').textContent = L.length? L.length+' FILINGS' : 'NONE YET';
+  $('annBox').innerHTML = L.length? L.map(a=>`
+    <div class="ann-row ${a.dir>0?'aup':a.dir<0?'adn':''}">
+      <span class="ann-at">${a.at||a.ago||''}</span>
+      <b>${a.symbol}</b>
+      <span class="chip ${ANNCLS[a.tag]||'nt'}">${a.tag}</span>
+      <span class="ann-imp">${a.impact}/10</span>
+      <span class="ann-sub">${a.subject}</span>
+    </div>`).join('')
+    : `<div class="empty">No material filings yet today — this reads what companies file with the exchange, which lands before the news sites pick it up</div>`;
+}
+function renderResultsDiary(list){
+  if(!$('calBox'))return;
+  if(!changed('cal', list)) return;
+  const L=list||[];
+  const t=L.filter(x=>x.days===0).length;
+  $('calTag').textContent = L.length? `${L.length} SCHEDULED${t?' · '+t+' TODAY':''}` : 'NONE';
+  $('calBox').innerHTML = L.length? L.map(x=>`
+    <div class="cal-row ${x.days===0?'cal0':x.days===1?'cal1':''}">
+      <span class="cal-when">${x.when}</span>
+      <b>${x.symbol}</b>
+      <span class="cal-date">${x.date}</span>
+      <span class="cal-note">${x.note}</span>
+    </div>`).join('')
+    : `<div class="empty">No results scheduled in the next 10 days for stocks in this universe</div>`;
+}
+/* ---------- breadth ---------- */
 function renderBreadth(b){
   if(!b||!$('breadthBox'))return;
   $('breadthBox').innerHTML=`<div class="trk-grid">
@@ -769,6 +808,8 @@ async function refresh(){
     window.__last=uniq;
     renderStatus(d.status);
     renderConfluence(d.confluence);
+    renderAnnouncements(d.announcements);
+    renderResultsDiary(d.results_diary);
     renderBreadth(d.breadth);
     orRows(d.or15,'or15List','or15Tag','15-min High');
     renderMood(d.mood);
