@@ -22,12 +22,37 @@ $('sndBtn') && ($('sndBtn').onclick=()=>{ soundOn=!soundOn;
   $('sndBtn').textContent=soundOn?'🔊 Sound':'🔇 Sound';
   $('sndBtn').classList.toggle('on',soundOn);
   if(soundOn&&!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  if(soundOn)beep(); });
-function beep(hi){ if(!soundOn||!audioCtx)return;
-  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
-  o.type='sine';o.frequency.value=hi?520:880;g.gain.value=.08;o.connect(g);g.connect(audioCtx.destination);
-  o.start();o.frequency.exponentialRampToValueAtTime(hi?300:1320,audioCtx.currentTime+.12);
-  g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+.3);o.stop(audioCtx.currentTime+.32); }
+  if(soundOn)beep('buy'); });
+// Distinct tones so you can tell what happened without looking at the screen.
+//   buy    two rising notes
+//   sell   two falling notes
+//   target three quick rising notes
+//   stop   low double thud
+//   crash  urgent siren, repeated
+const TONES = {
+  buy:    {seq:[[520,.10],[780,.14]],          gain:.09},
+  sell:   {seq:[[640,.10],[380,.16]],          gain:.09},
+  target: {seq:[[660,.07],[880,.07],[1180,.16]],gain:.11},
+  stop:   {seq:[[260,.14],[200,.20]],          gain:.10},
+  crash:  {seq:[[880,.12],[500,.12],[880,.12],[500,.20]], gain:.13},
+};
+function tone(f, dur, gain, at){
+  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type = gain>.1 ? 'square' : 'sine';
+  o.frequency.setValueAtTime(f, at);
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(gain, at+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, at+dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(at); o.stop(at+dur+0.02);
+}
+function beep(kind){
+  if(!soundOn||!audioCtx) return;
+  if(kind===true) kind='sell';            // old call style
+  const t = TONES[kind] || TONES.buy;
+  let at = audioCtx.currentTime;
+  t.seq.forEach(([f,d])=>{ tone(f,d,t.gain,at); at += d*0.85; });
+}
 
 /* ---------- countdown ---------- */
 function renderStatus(st){
@@ -250,9 +275,19 @@ function setTier(t){ TIER=t; store.set('tier',t); renderTop(); }
 
 /* ---------- 👑 confluence super setups ---------- */
 let conflData=[];
-function renderConfluence(list){
+function conflWhy(d){
+  if(!d || !d.total) return 'Waiting for the first data poll';
+  if(d.ready < 5)
+    return `Indicators still building — ${d.ready}/${d.total} stocks ready. Each needs 20 one-minute candles, so this fills in about 20 minutes after the server starts.`;
+  if(!d.pdh && !d.pwh)
+    return 'Previous day / week levels have not loaded yet. Without them a setup cannot score high enough to appear. Check the server log for [levels].';
+  if(!d.avgvol)
+    return `Average volume history not loaded, so the 2x volume check always fails. Best score so far today: ${d.best}/10.`;
+  return `Scanned ${d.ready} stocks. Best today: ${d.best}/10 confirmations — below the 6 needed. ${d.no_vwap||0} were on the wrong side of VWAP, ${d.rsi_out||0} had RSI out of range.`;
+}
+function renderConfluence(list, diag){
   if(!$('conflBox'))return;
-  if(!changed('confl', list)) return;
+  if(!changed('confl', [list, diag])) return;
   conflData=list||[];
   const sup=conflData.filter(c=>c.super).length;
   $('conflTag').textContent = conflData.length
@@ -284,7 +319,7 @@ function renderConfluence(list){
       <div class="sig-foot"><span>${c.rvol?c.rvol+'x vol · ':''}RSI ${c.rsi} · ADX ${c.adx}</span>
         <button class="btn wa mini" onclick="waConfl(${i})">🟢 WA</button></div>
     </div>`).join('')
-    : `<div class="empty">No high-confluence setup right now — a stock only appears here once 6 or more confirmations line up</div>`;
+    : `<div class="empty">No high-confluence setup right now — a stock only appears here once 6 or more confirmations line up.<br><br><b>Why nothing yet:</b> ${conflWhy(diag)}</div>`;
 }
 function waConfl(i){
   const c=conflData[i]; if(!c)return;
@@ -366,6 +401,7 @@ function renderMood(m){
     CONFUSED:['Jackpot calls: LIMITED','Breakout trading: WAIT','Aggressive trading: AVOID'],
     MIXED:['Stock-specific only','Follow strong sectors','Normal size']}[m.mood]||[];
   $('moodPill').innerHTML=`<span class="em">${m.emoji}</span> MARKET MOOD: ${m.mood}
+     ${m.headline?`<span class="mood-hl ${m.focus==='PE'?'hl-pe':'hl-ce'}">${m.headline}</span>`:''}
      <span class="nt2">· breadth ${m.breadth}% · ${m.note}</span>`;
   if($('moodRules')) $('moodRules').innerHTML=P.map(x=>`<span class="rule">${x}</span>`).join('');
 }
@@ -458,6 +494,13 @@ function renderTradeLog(t){
   if(!$('tradeLog')||!t)return;
   const rows=(t.history||[]).filter(s=>s.date===(t.today_date||s.date));
   if(!changed('log', rows)) return;
+  rows.forEach(s=>{
+    if(/HIT|COMPLETED/.test(s.status) && s.status!=='SL HIT'){
+      const k='hit:'+s.sym+s.status; if(!seen.has(k)){ seen.add(k); beep('target'); }
+    } else if(s.status==='SL HIT'){
+      const k='sl:'+s.sym; if(!seen.has(k)){ seen.add(k); beep('stop'); }
+    }
+  });
   const done=rows.filter(s=>s.status!=='LIVE').length;
   $('logTag').textContent=`${rows.length} CALLS · ${done} CLOSED`;
   const res=s=>{
@@ -493,6 +536,7 @@ function renderStructure(list){
     <div class="str-row ${x.dir==='up'?'sup':'sdn'}">
       <span class="str-at">${x.at||''}</span>
       <b>${x.symbol}</b><span class="sec">${x.sector||''}</span>
+      ${x.news?'<span class="str-news">📰 NEWS</span>':''}
       <span class="str-ev ${x.dir==='up'?'up':'dn'}">${x.big?'⭐ ':''}${x.event}</span>
       <span class="${x.chg>=0?'up':'dn'}">₹${fmt(x.ltp)} ${x.chg>=0?'▲':'▼'}${Math.abs(x.chg)}%</span>
       <span class="str-note">${x.note}</span>
@@ -610,8 +654,23 @@ function renderCOD(c){
       <div class="cod-cell"><div class="k">TARGET 2</div><div class="v up">${fmt(c.t2)} <small>+${c.t2_pct}%</small></div></div>
       <div class="cod-cell"><div class="k">TARGET 3</div><div class="v up">${fmt(c.t3)} <small>+${c.t3_pct}%</small></div></div>
     </div>
+    ${c.best_option?`<div class="bo-box">
+      <div class="bo-head"><span class="bo-tag">BEST OPTION TO TAKE</span>
+        <b>${c.best_option.symbol}</b>
+        <span class="bo-mn">${c.best_option.moneyness}</span>
+        <span class="bo-rr">R:R 1:${c.best_option.rr}</span></div>
+      <div class="pb-grid">
+        <div class="pb-cell"><div class="k">ENTRY</div><div class="v">₹${c.best_option.entry}</div></div>
+        <div class="pb-cell sl"><div class="k">SL</div><div class="v">₹${c.best_option.sl}</div><div class="p">${c.best_option.sl_pct}%</div></div>
+        <div class="pb-cell tg"><div class="k">TARGET 1</div><div class="v">₹${c.best_option.t1}</div><div class="p">+${c.best_option.t1_pct}%</div></div>
+        <div class="pb-cell tg"><div class="k">TARGET 2</div><div class="v">₹${c.best_option.t2}</div><div class="p">+${c.best_option.t2_pct}%</div></div>
+        ${c.best_option.t3?`<div class="pb-cell tg"><div class="k">TARGET 3</div><div class="v">₹${c.best_option.t3}</div><div class="p">+${c.best_option.t3_pct}%</div></div>`:''}
+      </div>
+      <div class="bo-meta">${c.best_option.why} · OI ${fmt(c.best_option.oi)} · expiry ${c.best_option.expiry}</div>
+      <div class="bo-note">${c.best_option.note} This option is logged in the trade log, so target and SL hits update automatically.</div>
+    </div>`:''}
     <div class="cod-opt">
-      <div class="k">OPTION STRIKES (spot ${fmt(c.ltp)} · ATM ${c.atm})</div>
+      <div class="k">OTHER STRIKES (spot ${fmt(c.ltp)} · ATM ${c.atm})</div>
       <div class="opt-row2">${(c.strikes||[]).map(o=>`
         <span class="opt-chip ${o.type==='CE'?'ce':'pe'}">${c.symbol} ${o.strike} ${o.type}<i>${o.label}</i></span>`).join('')}</div>
     </div>
@@ -719,7 +778,7 @@ function pushAlert(a){
     ${a.detail?`<div class="al-detail">${a.detail}</div>`:''}`;
   $('alertFeed').prepend(el);
   if($('alertFeed').children.length>30)$('alertFeed').lastChild.remove();
-  beep(a.type==='DANGER');
+  beep(a.sound || (a.type==='DANGER'?'sell':'buy'));
 }
 function renderAlerts(alerts, chartink){
   (alerts||[]).forEach(a=>{
@@ -777,7 +836,7 @@ function renderNewsSignals(sig){
   if(cr.length){
     $('crashBanner').style.display='block';
     $('crashBanner').innerHTML=`🚨 <b>CRASH ALERT</b> — ${cr[0].headline} <span class="cb-act">${cr[0].action}</span>`;
-    if(!seen.has('crash:'+cr[0].headline)){ seen.add('crash:'+cr[0].headline); beep(true); }
+    if(!seen.has('crash:'+cr[0].headline)){ seen.add('crash:'+cr[0].headline); beep('crash'); }
   } else { $('crashBanner').style.display='none'; }
 }
 
@@ -807,7 +866,7 @@ async function refresh(){
 
     window.__last=uniq;
     renderStatus(d.status);
-    renderConfluence(d.confluence);
+    renderConfluence(d.confluence, d.confl_diag);
     renderAnnouncements(d.announcements);
     renderResultsDiary(d.results_diary);
     renderBreadth(d.breadth);
