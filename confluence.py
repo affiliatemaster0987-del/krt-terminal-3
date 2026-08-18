@@ -1,32 +1,68 @@
 """
 KRT · CONFLUENCE ENGINE
 ═══════════════════════
-Terminal-la irukra ellaa data point-ayum ore edathula konduvandhu, ovvoru
-stock-kum 10 confirmation check pannuthu. Ellaam ✅ aana mattum thaan
-"SUPER CONFLUENCE" nu kaattum.
+Pulls every data point in the terminal into one place and checks 10
+confirmations per stock. Only a setup where nearly all of them agree gets
+the top grade.
 
-10 CONFIRMATIONS
-  1. SECTOR    — strong sector top-3 (BUY) / weak bottom-3 (SELL)
-  2. LEADER    — andha sector-la #1 or #2 stock, sector-ai outperform pannuthu
-  3. NEWS      — fresh positive/negative catalyst
-  4. PDH/PDL   — previous day high/low break
-  5. PWH/PWL   — previous week high/low break
-  6. VWAP      — VWAP mela hold (BUY) / keezha (SELL)
-  7. VOLUME    — average-ai vida 2x+ volume
-  8. HTF       — 15m + 1h trend align
-  9. ADX       — 30+ (trend strength irukku, chop illa)
- 10. RETEST    — breakout level-ku retest panni hold aachu (chase illa)
+THE 10 CONFIRMATIONS
+  1. SECTOR    strong sector top-3 (BUY) / weak bottom-3 (SELL)
+  2. LEADER    #1 or #2 stock in that sector, outperforming the sector
+  3. NEWS      fresh catalyst pointing the same way
+  4. PDH/PDL   previous day high / low broken
+  5. PWH/PWL   previous week high / low broken
+  6. VWAP      holding above VWAP (BUY) / below (SELL)
+  7. VOLUME    2x or more of average daily volume
+  8. HTF       15m and 1h trend aligned
+  9. ADX       30+, real trend rather than chop
+ 10. RETEST    broke out, retested the level and held (no chasing)
 
-Ovvoru setup-kum oru type tag: MULTI-BREAKOUT, SECTOR LEADER, MOMENTUM
-EXPLOSION, BREAKOUT RETEST, REVERSAL, NEWS + PRICE ACTION.
+Each carries a different weight — a retest hold or a month-high break is
+worth far more than ADX above 30, because it is rarer and gives a better
+entry. The weighted total becomes the score and the letter grade.
 """
 
-MIN_SCORE = 6          # idhukku keezha kaattave koodadhu
-SUPER_SCORE = 9        # 9+ = 👑 SUPER CONFLUENCE
+MIN_SCORE = 6          # below this, do not show at all
+SUPER_SCORE = 9        # 9+ confirmations = A+ grade
+
+# Not every confirmation is worth the same. ADX 30 is common; a fresh
+# month-high break with volume is rare. Weight them by how much edge each
+# one actually adds, and by how hard it is to get.
+WEIGHT = {
+    "retest": 14,      # hardest + best entry (no chasing)
+    "pwh":    12,      # weekly level = real structure
+    "month":  12,      # rarest
+    "volume": 11,      # conviction behind the move
+    "sector":  9,
+    "leader":  9,
+    "pdh":     8,
+    "htf":     8,
+    "news":    7,
+    "vwap":    6,      # common
+    "adx":     4,      # most common
+}
+MAX_RAW = sum(WEIGHT.values())      # 100
+
+# Honest grade bands. A+ is meant to be rare — a few per WEEK, not per day.
+GRADES = [
+    (78, "A+", "MUST TRY",      "Rare — everything lines up"),
+    (66, "A",  "STRONG",        "High quality, take it"),
+    (54, "B+", "WORK POSSIBLE", "Decent — half size"),
+    (42, "B",  "WATCH ONLY",    "Wait for one more confirmation"),
+    (0,  "C",  "SKIP",          "Too thin, leave it"),
+]
+
+
+def _grade(raw):
+    pct = round(raw / MAX_RAW * 100)
+    for cut, letter, label, note in GRADES:
+        if pct >= cut:
+            return pct, letter, label, note
+    return pct, "C", "SKIP", "Too thin"
 
 
 def _rel_vol(r, avgvol):
-    """Inniki volume / sarasari volume. 2.8x madhiri kaatta."""
+    """Today volume / average volume, e.g. 2.8x."""
     av = avgvol.get(r["symbol"])
     v = r.get("volume") or 0
     if not av or av <= 0 or not v:
@@ -35,10 +71,10 @@ def _rel_vol(r, avgvol):
 
 
 def _retest_ok(cs, level, side):
-    """Breakout aana level-ku thirumba vandhu, hold panni, mela close aacha?
+    """Did price break the level, come back to it, hold, and close beyond it?
 
-    Chase pannaama entry edukka idhu thaan mukkiyam. Kadaisi 60 candle-la:
-    level-ai break panni -> 0.4%-kku ulla thirumbi vandhu -> meendum mela.
+    This is what stops you chasing. Over the last 60 candles: break the
+    level, return within 0.4% of it, then close beyond it again.
     """
     if not level or len(cs) < 20:
         return False
@@ -63,7 +99,7 @@ def _retest_ok(cs, level, side):
 
 
 def _sweep_reclaim(cs, vwap, side):
-    """Reversal: day low sweep panni VWAP-ai reclaim aacha (or reverse)."""
+    """Reversal: swept the day low then reclaimed VWAP (or the mirror)."""
     if not vwap or len(cs) < 30:
         return False
     lo = min(c["l"] for c in cs)
@@ -77,33 +113,47 @@ def _sweep_reclaim(cs, vwap, side):
     return swept and last < vwap
 
 
+def _event_warn(days):
+    """Results due? A scheduled event can override any chart setup."""
+    if days is None:
+        return ""
+    if days == 0:
+        return "RESULTS TODAY — event risk, skip or use a fraction of normal size"
+    if days == 1:
+        return "RESULTS TOMORROW — overnight gap risk, do not hold"
+    if days <= 3:
+        return f"Results in {days} days — keep it intraday only"
+    return ""
+
+
 def _classify(f, rvol):
-    """Endha setup-nu peyar vekkaradhu (mukkiyathuvam vari-sai-ppadi)."""
+    """Name the setup, most significant pattern first."""
     if f["pdh"] and f["pwh"] and f["month"]:
-        return "🚀 MULTI-BREAKOUT", "PDH + PWH + Month high ellaam ore naal"
+        return "MULTI-BREAKOUT", "Day, week and month highs all broken today"
     if f["pdh"] and f["pwh"]:
-        return "🚀 MULTI-BREAKOUT", "Previous day + week level ready break"
+        return "MULTI-BREAKOUT", "Previous day and week levels both broken"
     if f["retest"]:
-        return "🎯 BREAKOUT RETEST", "Break aagi, retest panni, hold aachu"
+        return "BREAKOUT RETEST", "Broke out, came back, held the level"
     if f["reversal"]:
-        return "🔄 REVERSAL", "Day extreme sweep panni VWAP reclaim"
+        return "REVERSAL", "Swept the day extreme, then reclaimed VWAP"
     if f["leader"] and f["sector"]:
-        return "🔥 SECTOR LEADER", "Strongest sector-oda #1 stock"
+        return "SECTOR LEADER", "Number one stock in the strongest sector"
     if f["news"]:
-        return "📰 NEWS + PRICE ACTION", "Catalyst + technical rendum align"
+        return "NEWS + PRICE ACTION", "Catalyst and chart agree"
     if rvol and rvol >= 2 and f["adx"] and f["vwap"]:
-        return "💥 MOMENTUM EXPLOSION", "Volume vெடிச்சு trend start aaguthu"
-    return "⚡ EARLY TREND", "Trend aarambichukittu irukku"
+        return "MOMENTUM EXPLOSION", "Volume surge, trend just starting"
+    return "EARLY TREND", "Trend forming, still early"
 
 
-def build(stocks, sectors, levels, news_map, candles, ist_min):
-    """Ellaa stock-ayum scan panni, confluence card list-a thirupudhu."""
+def build(stocks, sectors, levels, news_map, candles, ist_min, results_map=None):
+    """Scan every stock and return the confluence cards."""
     srank = {x["sector"]: i + 1 for i, x in enumerate(sectors)}
     total = len(sectors) or 1
     sec_chg = {x["sector"]: x["chg"] for x in sectors}
     avgvol = levels.get("avgvol", {})
+    results_map = results_map or {}
 
-    # ovvoru sector-layum stock-ai chg vari-sai-ppadi -> leader kandupidikka
+    # rank stocks inside each sector so we can find the leader
     by_sec = {}
     for r in stocks:
         by_sec.setdefault(r["sector"], []).append(r)
@@ -169,23 +219,29 @@ def build(stocks, sectors, levels, news_map, candles, ist_min):
                 "near":    bool(d_lo and px <= d_lo * 1.005),
             }
 
-        # ── 10-point score ──
+        # ── weighted score ──
+        # Weighted, not a flat count — see WEIGHT above.
         keys = ["sector", "leader", "news", "pdh", "pwh",
                 "vwap", "volume", "htf", "adx", "retest"]
         score = sum(1 for k in keys if f[k])
+        raw = sum(WEIGHT[k] for k in keys if f[k])
         if f["month"]:
-            score += 1                     # month break = bonus
+            score += 1
+            raw += WEIGHT["month"]
         if not f["rsi_ok"] or not f["vwap"]:
-            continue                       # idhu rendum kandippa venum
+            continue                       # both of these are mandatory
         if score < MIN_SCORE:
             continue
 
+        pct, letter, label, gnote = _grade(raw)
+        if letter == "C":
+            continue
         setup, why = _classify(f, rvol)
         atr = ind.get("atr") or px * 0.006
         atr = min(atr, px * 0.025)
         sgn = 1 if side == "BUY" else -1
 
-        label = {
+        txt = {
             "sector":  f"{r['sector']} #{rk} strong sector" if side == "BUY"
                        else f"{r['sector']} weak sector",
             "leader":  "Stock is sector leader",
@@ -198,26 +254,28 @@ def build(stocks, sectors, levels, news_map, candles, ist_min):
             "adx":     f"ADX {ind.get('adx')}",
             "retest":  "Breakout retest hold",
         }
-        checks = [label[k] for k in keys if f[k]]
-        misses = [label[k] for k in keys if not f[k]]
+        checks = [txt[k] for k in keys if f[k]]
+        misses = [txt[k] for k in keys if not f[k]]
         if f["month"]:
             checks.insert(3, f"MONTH {'high' if side=='BUY' else 'low'} break")
 
         out.append({
             "symbol": r["symbol"], "sector": r["sector"], "side": side,
-            "ltp": px, "chg": r["chg"], "score": min(99, 55 + score * 4),
+            "ltp": px, "chg": r["chg"], "score": pct,
+            "grade": letter, "label": label, "gnote": gnote,
             "pts": score, "setup": setup, "why": why,
             "checks": checks, "misses": misses,
             "rvol": rvol, "rsi": ind.get("rsi"), "adx": ind.get("adx"),
-            "super": score >= SUPER_SCORE,
+            "super": letter == "A+",
             "entry": round(px, 2),
             "sl":  round(px - sgn * 1.2 * atr, 2),
             "t1":  round(px + sgn * 1.5 * atr, 2),
             "t2":  round(px + sgn * 2.5 * atr, 2),
             "t3":  round(px + sgn * 4.0 * atr, 2),
-            "avoid": ("VWAP keezha close aana veliya va"
-                      if side == "BUY" else "VWAP mela close aana veliya va"),
-            "late": ist_min > 870,          # 2:30 kku appuram = late entry
+            "avoid": ("Closes back below VWAP"
+                      if side == "BUY" else "Closes back above VWAP"),
+            "event": _event_warn(results_map.get(r["symbol"])),
+            "late": ist_min > 870,          # after 2:30 pm, too late for a fresh entry
         })
 
     out.sort(key=lambda x: (-x["pts"], -x["score"]))
