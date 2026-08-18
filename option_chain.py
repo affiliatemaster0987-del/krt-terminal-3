@@ -286,3 +286,4 @@ def est_delta(spot, strike, side, step):
     if steps_otm < 1.5:   return 0.35
     if steps_otm < 2.5:   return 0.22
     return 0.14
+
