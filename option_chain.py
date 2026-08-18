@@ -19,6 +19,16 @@ CACHE_SEC = 420          # 7 min — chain moves slowly, saves API load      # o
 _master = {"rows": [], "ts": 0, "loading": False}
 # Index option chains mattum thevai — stock options thevai illa (RAM saving)
 IDX_NAMES = ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50")
+# Stock option chains are needed too, so the terminal can name an actual
+# strike for a stock call. Widened at startup via set_universe().
+WANT_NAMES = set(IDX_NAMES)
+
+
+def set_universe(symbols):
+    """Keep index + our F&O stock universe. Everything else is dropped while
+    streaming, which is what keeps memory flat on a small instance."""
+    WANT_NAMES.update(s.strip().upper() for s in (symbols or []) if s)
+    print(f"[optchain] master will keep {len(WANT_NAMES)} underlyings")
 
 SCRIP_MASTER_URL = ("https://margincalculator.angelbroking.com/OpenAPI_File/"
                     "files/OpenAPIScripMaster.json")
@@ -51,7 +61,7 @@ def _load_master(blocking=False):
         # File ~150MB. json.loads() full-a panna peak RAM ~1.5GB -> Render
         # free tier (512MB) OOM-kill aagum. Adhanaala oru object-a mattum
         # parse panni, thevaiyaanadha mattum vechukirom (peak ~30MB).
-        want = set(IDX_NAMES) if IDX_NAMES else None
+        want = set(WANT_NAMES) if WANT_NAMES else None
         req = urllib.request.Request(SCRIP_MASTER_URL, headers={"User-Agent": "KRT"})
         opts, buf, kept = [], "", 0
         with urllib.request.urlopen(req, timeout=120) as r:
