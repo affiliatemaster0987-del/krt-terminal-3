@@ -3,7 +3,7 @@ KRT AI Terminal 3.0 — Angel One SmartAPI client
 - 180+ F&O stocks (tokens auto-resolved from Angel One instrument master)
 - Prev Day High/Low, Prev Week High, First 5-min candle High (opening range)
 - Sector mapping -> strong sectors / weak sectors
-- Credentials இல்லைனா DEMO mode (site எப்பவும் வேலை செய்யும்)
+- No credentials -> DEMO mode (the site always renders)
 
 Environment variables (Render → Environment):
   SMARTAPI_KEY, SMARTAPI_CLIENT, SMARTAPI_PIN, SMARTAPI_TOTP
@@ -13,6 +13,7 @@ import urllib.request
 import indicators as IND
 import option_chain as OC
 import confluence as CONF
+import corporate as CORP
 from datetime import datetime, timedelta
 
 # ───────────────────────── INDICES (fixed tokens) ─────────────────────────
@@ -27,7 +28,7 @@ IDX_OPT_NAME = {"NIFTY 50": "NIFTY", "BANKNIFTY": "BANKNIFTY", "FINNIFTY": "FINN
 IDX_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50}
 
 # ───────────────────────── F&O UNIVERSE + SECTORS ─────────────────────────
-# symbol : sector   (Angel token auto-resolve ஆகும் — hardcode இல்லை)
+# symbol : sector   (Angel tokens auto-resolve, nothing hardcoded)
 UNIVERSE = {
     # IT
     "TCS": "IT", "INFY": "IT", "WIPRO": "IT", "HCLTECH": "IT", "TECHM": "IT",
@@ -875,12 +876,26 @@ def _build_dashboard_inner():
     confl = []
     try:
         import news as NEWS
+        _uni = set(UNIVERSE.keys())
         _nmap = NEWS.stock_sentiment()
+        # exchange filings are a harder catalyst than an RSS headline,
+        # so they override where both exist
+        _nmap.update(CORP.sentiment_map(_uni))
         _cmin = _ist_now().hour * 60 + _ist_now().minute
         confl = CONF.build(stocks, sectors, _levels, _nmap,
-                           dict(IND.CANDLES), _cmin)
+                           dict(IND.CANDLES), _cmin,
+                           results_map=CORP.results_soon(_uni))
     except Exception as e:
         print("confluence error:", e)
+
+    # ── CORPORATE FILINGS + RESULTS DIARY ──
+    announcements, results_diary = [], []
+    try:
+        _u = set(UNIVERSE.keys())
+        announcements = CORP.get_announcements(_u)
+        results_diary = CORP.get_results_calendar(_u)
+    except Exception as e:
+        print("corporate error:", e)
 
     structure = []
     try:
@@ -1131,6 +1146,7 @@ def _build_dashboard_inner():
 
     return {
         "status": mstat, "breadth": breadth, "confluence": confl,
+        "announcements": announcements, "results_diary": results_diary,
         "or5": or5[:12], "or15": or15[:12],
         "mode": mode, "indices": indices, "gainers": gainers, "losers": losers,
         "volume": by_vol, "alerts": alerts, "sectors": sectors,
