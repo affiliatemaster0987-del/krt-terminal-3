@@ -337,14 +337,20 @@ GOOD_TAGS = ("ORDER WIN", "STRONG POSITIVE", "POSITIVE")
 BAD_TAGS = ("COMPANY RISK", "NEGATIVE")
 
 
-def get_news_signals():
+def get_news_signals(quotes=None):
+    """Build the news signal buckets.
+
+    `quotes` is the live stock rows, passed in by the caller. It used to call
+    smart_client.build_dashboard() itself, but build_dashboard() calls this
+    function — so the two recursed into each other until the gunicorn worker
+    was SIGKILLed. Never call back into the dashboard from here.
+    """
     jackpot, danger, crash, results = [], [], [], []
     smap = {}
     try:
-        from smart_client import build_dashboard
-        d = build_dashboard()
-        for r in (d.get("gainers", []) + d.get("losers", []) + d.get("volume", [])):
-            smap[r["symbol"]] = r
+        for r in (quotes or []):
+            if r.get("symbol"):
+                smap[r["symbol"]] = r
     except Exception as e:
         print("news signals quote error:", e)
 
@@ -421,7 +427,7 @@ def stock_sentiment():
     use pannum. Sirandha/mosamaana news irundha mattum entry."""
     out = {}
     try:
-        for n in (get_news() or {}).get("items", []):
+        for n in (get_news() or []):
             if n.get("impact", 0) < 7 or n.get("age_h", 99) > 6:
                 continue
             v = 1 if n.get("tag") in ("ORDER WIN", "STRONG POSITIVE", "POSITIVE") \
