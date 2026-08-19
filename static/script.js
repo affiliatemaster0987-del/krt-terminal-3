@@ -94,6 +94,30 @@ function dgMsg(d){
 
 /* ---------- JACKPOT / DANGER build ---------- */
 let jackpots=[], dangers=[];
+
+/* ---------- star rating (5★ = highest conviction) ---------- */
+function starN(score){
+  const v = Number(score)||0;
+  if(v>=90) return 5;
+  if(v>=80) return 4;
+  if(v>=70) return 3;
+  if(v>=60) return 2;
+  return 1;
+}
+function stars(score){
+  const n=starN(score);
+  return `<span class="stars s${n}" title="${n} of 5 — score ${score}">${'★'.repeat(n)}${'☆'.repeat(5-n)}<i>${n}/5</i></span>`;
+}
+function starWord(score){
+  return ['','WATCH ONLY','WEAK','DECENT','STRONG','MUST TRY'][starN(score)];
+}
+/* nearest tradable option strike for a stock */
+function atmStrike(px){
+  const p=Number(px)||0;
+  const step = p<100?2.5 : p<250?5 : p<500?10 : p<1000?20 : p<2500?50 : 100;
+  return Math.round(p/step)*step;
+}
+
 function buildJackpots(stocks, brk, sectorRank){
   const pdh=new Set((brk.pdh||[]).map(r=>r.symbol));
   const pwh=new Set((brk.pwh||[]).map(r=>r.symbol));
@@ -167,7 +191,9 @@ function renderJackpots(){
       <div class="sig-top"><b class="sym">${j.symbol}</b>
         <span class="sec">${j.sector}</span>
         <span class="up">₹${fmt(j.ltp)} ▲${j.chg}%</span>
-        <span class="sc">${j.score}<small>/100</small></span></div>
+        <span class="sc">${j.score}<small>/100</small></span>
+        ${stars(j.score)}<span class="star-word">${starWord(j.score)}</span>
+        <span class="opt-sug">Option: ${j.symbol} ${atmStrike(j.ltp)} CE</span></div>
       <div class="sig-tags">${j.tags.map(t=>`<span class="t-chip">✅ ${t}</span>`).join('')||'<span class="t-chip dim">Momentum</span>'}</div>
       <div class="sig-lv"><span class="e">E ${j.e}</span><span class="s">SL ${j.sl}</span>
         <span class="t">T1 ${j.t1}</span><span class="t">T2 ${j.t2}</span><span class="t">T3 ${j.t3}</span></div>
@@ -183,7 +209,9 @@ function renderDangers(){
       <div class="sig-top"><b class="sym">${d.symbol}</b>
         <span class="sec">${d.sector}</span>
         <span class="dn">₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}%</span>
-        <span class="sc dnsc">${d.score}<small>/100</small></span></div>
+        <span class="sc dnsc">${d.score}<small>/100</small></span>
+        ${stars(d.score)}<span class="star-word">${starWord(d.score)}</span>
+        <span class="opt-sug">Option: ${d.symbol} ${atmStrike(d.ltp)} PE</span></div>
       <div class="sig-tags">${d.tags.map(t=>`<span class="t-chip bad">⚠ ${t}</span>`).join('')||'<span class="t-chip dim">Weak</span>'}</div>
       <div class="sig-lv"><span class="e">E ${d.e}</span><span class="s">SL ${d.sl}</span>
         <span class="t">T1 ${d.t1}</span><span class="t">T2 ${d.t2}</span></div>
@@ -418,8 +446,15 @@ function renderOptions(stocks, sectorRank, total){
     if(cls==='up'&&rk<=3)why.push('strong sector');
     if(cls==='dn'&&rk>=total-3)why.push('weak sector');
     if((r.volume||0)>1e7)why.push('high volume');
+    const ind=r.ind||{}; let sc=45+Math.min(25,Math.round(Math.abs(r.chg)*6))+why.length*5;
+    if(ind.adx&&ind.adx>=25) sc+=8;
+    if(ind.vwap&&((cls==='up'&&r.ltp>ind.vwap)||(cls==='dn'&&r.ltp<ind.vwap))) sc+=8;
+    sc=Math.min(99,sc);
+    const sd = cls==='up'?'CE':'PE';
     return `<div class="opt-row"><b>${r.symbol}</b><span class="sec">${r.sector||''}</span>
       <span class="${cls}">${r.chg>=0?'▲':'▼'}${Math.abs(r.chg)}%</span>
+      ${stars(sc)}<span class="star-word">${starWord(sc)}</span>
+      <span class="opt-sug">${r.symbol} ${atmStrike(r.ltp)} ${sd}</span>
       <span class="why">${why.join(' · ')}</span></div>`;
   };
   $('ceList').innerHTML = ce.length? ce.map(r=>line(r,'up')).join('') : `<div class="empty">No clear CE bias</div>`;
@@ -468,6 +503,8 @@ function renderZones(list){
         <span class="chip ${z.side==='BUY'?'up':'dn'}">${z.side}</span>
         ${z.must?`<span class="must-tag">⭐ MUST TRY · ${z.side==='BUY'?'LOOKING BIG JACKPOT — CE':'LOOKING BIG CRASH — PE'}</span>`:''}
         <span class="z-score">${z.score}<small>/100</small></span>
+        ${stars(z.score)}<span class="star-word">${starWord(z.score)}</span>
+        <span class="opt-sug">Option: ${z.symbol} ${atmStrike(z.ltp)} ${z.side==='BUY'?'CE':'PE'}</span>
       </div>
       <div class="z-band">${z.side==='BUY'?'Buy zone':'Sell zone'}
         <b>${fmt(z.zone_lo)} – ${fmt(z.zone_hi)}</b>
@@ -532,8 +569,9 @@ function renderTradeLog(t){
 function renderStructure(list){
   if(!$('strBox'))return;
   if(!changed('str', list)) return;
-  const L=list||[];
-  $('strTag').textContent=L.length+' ALERTS';
+  const mins = t => { const m=/(\d{1,2}):(\d{2})/.exec(t||''); return m? (+m[1])*60+(+m[2]) : -1; };
+  const L=[...(list||[])].sort((a,b)=> mins(b.at)-mins(a.at));   // newest breakout on top
+  $('strTag').textContent=L.length+' ALERTS · newest first';
   $('strBox').innerHTML = L.length? L.map(x=>`
     <div class="str-row ${x.dir==='up'?'sup':'sdn'}">
       <span class="str-at">${x.at||''}</span>
@@ -647,6 +685,7 @@ function renderCOD(c){
       <span class="chip ${c.side==='BUY'?'up':'dn'}">${c.side}</span>
       <span class="cod-view">${c.view}</span>
       <span class="cod-score">${c.score}<small>/100</small></span>
+      ${stars(c.score)}<span class="star-word">${starWord(c.score)}</span>
     </div>
     <div class="cod-grid">
       <div class="cod-cell"><div class="k">${c.side==='BUY'?'BUY ZONE':'SELL ZONE'}</div>
