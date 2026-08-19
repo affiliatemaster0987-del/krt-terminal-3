@@ -551,3 +551,28 @@ td.sec{font-size:.6rem;color:var(--dim)}
   border-radius:99px;margin:0 6px}
 .mood-hl.hl-pe{background:var(--red);color:#fff}
 .mood-hl.hl-ce{background:var(--green);color:#0d1119}
+
+/* ═══════════ STAR RATINGS + OPTION SUGGESTION (added) ═══════════ */
+.stars{ display:inline-flex; align-items:center; gap:2px; font-size:.82rem;
+  letter-spacing:1px; margin-left:6px; white-space:nowrap; }
+.stars i{ font-style:normal; font-size:.6rem; opacity:.65; margin-left:4px;
+  letter-spacing:0; }
+.stars.s5{ color:#ffd83d; text-shadow:0 0 8px rgba(255,216,61,.45); }
+.stars.s4{ color:#16d67a; }
+.stars.s3{ color:#57b7ff; }
+.stars.s2{ color:#8a94a8; }
+.stars.s1{ color:#5a6072; }
+.star-word{ font-size:.58rem; letter-spacing:.09em; font-weight:700;
+  padding:2px 7px; border-radius:5px; margin-left:5px;
+  background:rgba(255,255,255,.05); color:var(--dim); white-space:nowrap; }
+.stars.s5 + .star-word{ background:rgba(255,216,61,.16); color:#ffd83d; }
+.stars.s4 + .star-word{ background:rgba(22,214,122,.14); color:#16d67a; }
+.opt-sug{ font-size:.62rem; font-family:'JetBrains Mono',monospace;
+  padding:2px 8px; border-radius:5px; margin-left:6px; white-space:nowrap;
+  background:rgba(87,183,255,.12); color:#57b7ff;
+  border:1px solid rgba(87,183,255,.25); }
+.opt-row{ flex-wrap:wrap; row-gap:4px; }
+@media(max-width:640px){
+  .stars{ font-size:.75rem; }
+  .opt-sug{ font-size:.58rem; }
+}
