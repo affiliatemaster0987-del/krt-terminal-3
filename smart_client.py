@@ -622,14 +622,25 @@ _dash = {"data": None, "ts": 0}
 DASH_CACHE_SEC = 6
 
 
+_building = threading.Lock()
+
+
 def build_dashboard():
     """Cached wrapper — heavy work runs at most once every DASH_CACHE_SEC."""
     now = time.time()
     if _dash["data"] and now - _dash["ts"] < DASH_CACHE_SEC:
         return _dash["data"]
-    d = _build_dashboard_inner()
-    _dash.update(data=d, ts=now)
-    return d
+    # Re-entrancy guard. If anything called from inside the builder ever calls
+    # build_dashboard() again, hand it the last good snapshot instead of
+    # recursing — that recursion is what killed the worker.
+    if not _building.acquire(blocking=False):
+        return _dash["data"] or {}
+    try:
+        d = _build_dashboard_inner()
+        _dash.update(data=d, ts=time.time())
+        return d
+    finally:
+        _building.release()
 
 
 def _build_dashboard_inner():
@@ -928,7 +939,7 @@ def _build_dashboard_inner():
     _nsig = {}
     try:
         import news as _N
-        _nsig = _N.get_news_signals() or {}
+        _nsig = _N.get_news_signals(stocks) or {}
     except Exception as e:
         print("news signal error:", e)
 
