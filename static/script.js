@@ -301,6 +301,7 @@ function waTop(sym){
   openWA(`${s.side==='BUY'?'🚀':'⚠'} KRT AI ${s.side} ALERT\n\n${s.sym}  [${tierName(s.score)} ${s.score}/100]\n\nEntry: ₹${s.entry}\nSL: ₹${s.sl}\nT1: ₹${s.t1}\nT2: ₹${s.t2}${s.t3?`\nT3: ₹${s.t3}`:''}\n\nReason: ${s.setup||'-'}\nTime: ${s.ts}\nStatus: ${s.status}\n\n⚠ Educational only. Not investment advice.`);
 }
 function setTier(t){ TIER=t; store.set('tier',t); renderTop(); }
+
 /* ---------- 👑 confluence super setups ---------- */
 let conflData=[];
 function conflWhy(d){
@@ -565,6 +566,30 @@ function renderTradeLog(t){
 }
 
 /* ---------- structure alerts ---------- */
+
+/* ---------- monthly F&O expiry label, e.g. "SEP" ---------- */
+function expiryTag(){
+  const M=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const now=new Date();
+  const last=new Date(now.getFullYear(), now.getMonth()+1, 0);
+  while(last.getDay()!==4) last.setDate(last.getDate()-1);   // last Thursday
+  // inside the last 2 sessions of the series, the next month is the liquid one
+  const roll = new Date(last); roll.setDate(roll.getDate()-1);
+  const d = now > roll ? new Date(now.getFullYear(), now.getMonth()+1, 1) : now;
+  return M[d.getMonth()];
+}
+/* how good is this hour for a fresh breakout entry? */
+function timeQuality(at){
+  const m=/(\d{1,2}):(\d{2})/.exec(at||''); if(!m) return null;
+  const t=(+m[1])*60+(+m[2]);
+  if(t< 555) return {k:'pre', txt:'PRE-OPEN — wait for 9:15'};
+  if(t< 570) return {k:'ok',  txt:'OPENING — volatile, half size'};
+  if(t<=690) return {k:'best',txt:'BEST TIME — prime trending window'};
+  if(t<=810) return {k:'bad', txt:'DEAD ZONE — low momentum, skip'};
+  if(t<=885) return {k:'ok',  txt:'GOOD — afternoon trend leg'};
+  return {k:'bad', txt:'TOO LATE — no fresh entry after 3:15'};
+}
+
 function renderStructure(list){
   if(!$('strBox'))return;
   if(!changed('str', list)) return;
@@ -580,6 +605,9 @@ function renderStructure(list){
       <span class="${x.chg>=0?'up':'dn'}">₹${fmt(x.ltp)} ${x.chg>=0?'▲':'▼'}${Math.abs(x.chg)}%</span>
       <span class="str-note">${x.note}</span>
       <span class="str-act">${x.action}</span>
+      ${(()=>{ const q=timeQuality(x.at); const sd=x.dir==='up'?'CE':'PE';
+         return `<span class="opt-sug">${x.symbol} ${atmStrike(x.ltp)} ${sd} ${expiryTag()}</span>`
+              + (q? `<span class="tq tq-${q.k}">⏱ ${q.txt}</span>` : ''); })()}
     </div>`).join('') : `<div class="empty">No breakout or breakdown yet — alerts fire when price clears the day high / low with volume</div>`;
 }
 
@@ -655,6 +683,7 @@ $('idxSend') && ($('idxSend').onclick=()=>{
     `${x.index}: ${x.side||'WAIT'} ${x.score}/100 · spot ${x.spot} (${x.chg>=0?'+':''}${x.chg}%)${x.strikes&&x.strikes.length?` · ${x.opt} ${x.strikes[0].strike} ${x.strikes[0].type}`:''}\n   ${x.verdict}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+
 /* ---------- session + index bias ---------- */
 function renderSession(sess, ib){
   if(sess && $('sessPill')){
@@ -963,7 +992,4 @@ async function refreshNews(){
 refresh(); refreshNews();
 setInterval(refresh, CONFIG.REFRESH_MS);
 setInterval(refreshNews, 90000);          // news every 90s — much lighter
-
-
-
 
