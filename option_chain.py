@@ -30,7 +30,8 @@ def set_universe(symbols):
     WANT_NAMES.update(s.strip().upper() for s in (symbols or []) if s)
     print(f"[optchain] master will keep {len(WANT_NAMES)} underlyings")
 
-MASTER_FILE = "/tmp/krt_optmaster.json"
+import store as _ST
+MASTER_FILE = _ST.path("krt_optmaster.json")
 
 
 def _master_load():
