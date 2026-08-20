@@ -15,6 +15,7 @@ import option_chain as OC
 import confluence as CONF
 import corporate as CORP
 import optionpick as OPT
+import store as _ST
 from datetime import datetime, timedelta
 
 # ───────────────────────── INDICES (fixed tokens) ─────────────────────────
@@ -125,7 +126,7 @@ _lock = threading.Lock()
 # on every OOM), and each restart threw the work away — which is why the
 # terminal sat on "levels have not loaded yet" all session. Persist them so a
 # restart reuses the same day's work instead of starting over.
-LEVELS_FILE = "/tmp/krt_levels.json"
+LEVELS_FILE = _ST.path("krt_levels.json")
 
 
 def _levels_load():
