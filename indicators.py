@@ -326,23 +326,74 @@ def confirmations_short(r):
 
 
 # ═════════ SIGNAL TRACKER (T1/T2/T3 + times + accuracy) ═════════
-TRACK_FILE = "/tmp/krt_signals.json"
+import store as _ST
+# /tmp is wiped on every Render deploy, which is why a full day of calls kept
+# disappearing. store.py picks a persistent disk when one is attached.
+TRACK_FILE = _ST.path("krt_signals.json")
+# 1500 covered barely a fortnight. A year at ~80 calls a day needs far more,
+# and the 30-day accuracy panel is meaningless if older rows are dropped.
+KEEP_SIGNALS = 40000
 _signals = []
 COOLDOWN_MIN = 15
 
 
-def _load():
-    global _signals
+# Gunicorn runs more than one worker, and each one holds its own _signals
+# list. The old _save() wrote that private list straight over the shared
+# file, so whichever worker saved last wiped the calls the other worker had
+# logged — the trade log kept dropping from 8 calls back to 1. Every read
+# and write now merges against what is already on disk.
+_ADVANCE = {"LIVE": 0, "T1 HIT": 1, "T2 HIT": 2, "T3 HIT": 3,
+            "SL HIT": 3, "CLOSED": 3}
+
+
+def _disk_read():
     try:
         if os.path.exists(TRACK_FILE):
-            _signals = json.load(open(TRACK_FILE))
+            d = json.load(open(TRACK_FILE))
+            return d if isinstance(d, list) else []
     except Exception:
-        _signals = []
+        pass
+    return []
+
+
+def _merge(a, b):
+    """Combine two signal lists. On a clash keep the further-along record."""
+    out = {}
+    for sig in list(a) + list(b):
+        if not isinstance(sig, dict):
+            continue
+        k = sig.get("id") or f"{sig.get('sym')}-{sig.get('side')}-{sig.get('ts')}"
+        cur = out.get(k)
+        if cur is None:
+            out[k] = sig
+            continue
+        if _ADVANCE.get(sig.get("status"), 0) >= _ADVANCE.get(cur.get("status"), 0):
+            out[k] = sig
+    rows = list(out.values())
+    rows.sort(key=lambda x: (x.get("date", ""), x.get("ts", "")))
+    return rows
+
+
+def _load():
+    global _signals
+    _signals = _disk_read()
+
+
+def _sync():
+    """Pull in anything another worker logged since we last looked."""
+    global _signals
+    _signals = _merge(_disk_read(), _signals)
+    return _signals
 
 
 def _save():
+    global _signals
     try:
-        json.dump(_signals[-1500:], open(TRACK_FILE, "w"))
+        _signals = _merge(_disk_read(), _signals)[-KEEP_SIGNALS:]
+        tmp = TRACK_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(_signals, f)
+        os.replace(tmp, TRACK_FILE)      # atomic, never a half-written file
     except Exception:
         pass
 
@@ -360,6 +411,7 @@ def _mins_since(hhmm, date):
 
 def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="", source="JACKPOT"):
     """Cooldown: same stock+side 15 min-ku ulla thirumba log aagadhu."""
+    _sync()
     today = _ist().strftime("%Y-%m-%d")
     for s in reversed(_signals):
         if s["sym"] == sym and s["side"] == side and s["date"] == today:
@@ -381,6 +433,7 @@ def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="", sour
 
 
 def update_tracker(price_map):
+    _sync()
     changed = []
     now = _ist().strftime("%H:%M")
     for s in _signals:
@@ -435,6 +488,7 @@ def _acc(rows):
 
 
 def stats():
+    _sync()
     today = _ist().strftime("%Y-%m-%d")
     d7 = (_ist() - timedelta(days=7)).strftime("%Y-%m-%d")
     d30 = (_ist() - timedelta(days=30)).strftime("%Y-%m-%d")
