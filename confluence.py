@@ -126,10 +126,11 @@ def _event_warn(days):
     return ""
 
 
-def _classify(f, rvol):
+def _classify(f, rvol, side="BUY"):
     """Name the setup, most significant pattern first."""
+    ext = "highs" if side == "BUY" else "lows"
     if f["pdh"] and f["pwh"] and f["month"]:
-        return "MULTI-BREAKOUT", "Day, week and month highs all broken today"
+        return "MULTI-BREAKOUT", f"Day, week and month {ext} all broken today"
     if f["pdh"] and f["pwh"]:
         return "MULTI-BREAKOUT", "Previous day and week levels both broken"
     if f["retest"]:
@@ -245,8 +246,15 @@ def build(stocks, sectors, levels, news_map, candles, ist_min, results_map=None)
         if letter == "C":
             diag["too_thin"] += 1
             continue
-        setup, why = _classify(f, rvol)
-        atr = ind.get("atr") or px * 0.006
+        setup, why = _classify(f, rvol, side)
+        # ATR here comes off 1-minute candles, so on a quiet stock it can be a
+        # few paise. Used raw it produced a 0.05 stop on a 100 rupee stock —
+        # levels tighter than the spread, which no trade can survive. Apply the
+        # same floor indicators.py uses, based on today's actual range.
+        atr = ind.get("atr") or 0
+        day_rng = (ind.get("day_high") or px) - (ind.get("day_low") or px)
+        floor = max(px * 0.005, min(day_rng, px * 0.05) * 0.30)
+        atr = max(atr, floor)
         atr = min(atr, px * 0.025)
         sgn = 1 if side == "BUY" else -1
 
@@ -281,6 +289,8 @@ def build(stocks, sectors, levels, news_map, candles, ist_min, results_map=None)
             "t1":  round(px + sgn * 1.5 * atr, 2),
             "t2":  round(px + sgn * 2.5 * atr, 2),
             "t3":  round(px + sgn * 4.0 * atr, 2),
+            "risk_pct": round(abs(1.2 * atr) / px * 100, 2),
+            "rr": round(1.5 / 1.2, 2),
             "avoid": ("Closes back below VWAP"
                       if side == "BUY" else "Closes back above VWAP"),
             "event": _event_warn(results_map.get(r["symbol"])),
