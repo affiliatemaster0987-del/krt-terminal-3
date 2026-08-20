@@ -576,3 +576,16 @@ td.sec{font-size:.6rem;color:var(--dim)}
   .stars{ font-size:.75rem; }
   .opt-sug{ font-size:.58rem; }
 }
+
+/* ═══════════ BREAKOUT TIME QUALITY (added) ═══════════ */
+.tq{ font-size:.58rem; letter-spacing:.06em; font-weight:700;
+  padding:2px 8px; border-radius:5px; margin-left:6px; white-space:nowrap; }
+.tq-best{ background:rgba(22,214,122,.16); color:#16d67a;
+  border:1px solid rgba(22,214,122,.35); }
+.tq-ok{ background:rgba(87,183,255,.12); color:#57b7ff;
+  border:1px solid rgba(87,183,255,.25); }
+.tq-bad{ background:rgba(255,90,110,.12); color:#ff5a6e;
+  border:1px solid rgba(255,90,110,.3); }
+.tq-pre{ background:rgba(255,216,61,.12); color:#ffd83d;
+  border:1px solid rgba(255,216,61,.3); }
+.str-row{ flex-wrap:wrap; row-gap:5px; }
