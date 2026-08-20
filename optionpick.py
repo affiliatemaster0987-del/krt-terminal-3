@@ -39,6 +39,17 @@ def _delta(spot, strike, side):
     return 0.12
 
 
+def _under(chain):
+    """Underlying name from a chain dict, whichever key it used."""
+    if not chain:
+        return ""
+    for k in ("symbol", "name", "underlying"):
+        v = chain.get(k)
+        if v:
+            return str(v).strip().upper()
+    return ""
+
+
 def pick(chain, spot, side, spot_sl, spot_t1, spot_t2, spot_t3=None,
          entry_spot=None):
     """Choose the best strike and translate spot levels into premium levels.
@@ -116,7 +127,10 @@ def pick(chain, spot, side, spot_sl, spot_t1, spot_t2, spot_t3=None,
                  else "OTM" if (strike > spot) == (side == "CE") else "ITM")
 
     return {
-        "symbol": f"{chain.get('name', '')} {int(strike)} {side}".strip(),
+        # get_chain() returns the underlying under "symbol"; "name" was never
+        # a key, so this silently produced "325 CE" with no stock name.
+        "symbol": f"{_under(chain)} {int(strike)} {side}".strip(),
+        "underlying": _under(chain),
         "strike": int(strike), "side": side, "moneyness": moneyness,
         "expiry": chain.get("expiry", ""),
         "entry": round(prem, 2),
