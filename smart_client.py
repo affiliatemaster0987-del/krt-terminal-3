@@ -118,6 +118,41 @@ _preopen = {"day": "", "rows": [], "final": False}
 _diag = {"source": "angel", "tokens": 0, "pdh_ok": 0, "orh_ok": 0, "last_error": "", "sample_error": "",
          "login": "not tried", "running": False, "started": ""}
 _lock = threading.Lock()
+
+# ── LEVELS DISK CACHE ────────────────────────────────────────────────────
+# Warming PDH/PWH means ~144 sequential Angel calls with a rate-limit sleep,
+# so a full pass takes minutes. Render restarts the worker often (and did so
+# on every OOM), and each restart threw the work away — which is why the
+# terminal sat on "levels have not loaded yet" all session. Persist them so a
+# restart reuses the same day's work instead of starting over.
+LEVELS_FILE = "/tmp/krt_levels.json"
+
+
+def _levels_load():
+    try:
+        with open(LEVELS_FILE) as f:
+            d = json.load(f)
+        if d.get("day") != _ist_now().strftime("%Y-%m-%d"):
+            return                      # stale, warm again
+        for k in ("pdh", "pdl", "pwh", "pwl", "pmh", "pml", "avgvol", "orh"):
+            if isinstance(d.get(k), dict):
+                _levels[k].update(d[k])
+        _levels["day"] = d.get("day", "")
+        _levels["or_day"] = d.get("or_day", "")
+        print(f"[levels] restored {len(_levels['pdh'])} symbols from disk cache")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print("[levels] cache read failed:", str(e)[:120])
+
+
+def _levels_save():
+    try:
+        with open(LEVELS_FILE, "w") as f:
+            json.dump(_levels, f)
+    except Exception as e:
+        print("[levels] cache write failed:", str(e)[:120])
+
 CACHE_SECONDS = 3
 
 
@@ -349,6 +384,7 @@ def _warm_levels_yahoo():
     _diag["source"] = "yahoo" if ok else _diag.get("source", "")
     if _levels["pdh"]:
         _levels["day"] = today
+        _levels_save()
     print(f"[levels/yahoo] {ok} symbols")
 
 
@@ -442,11 +478,12 @@ def _warm_levels():
             except Exception as ex:
                 if not _diag["sample_error"]:
                     _diag["sample_error"] = f"{sym}: {str(ex)[:200]}"
-            time.sleep(0.35)          # Angel historical rate limit
+            time.sleep(0.22)          # Angel historical rate limit
         _diag["pdh_ok"] = len(_levels["pdh"])
         _diag["running"] = False
         if _levels["pdh"]:
             _levels["day"] = today
+            _levels_save()
         print(f"[levels] PDH/PWH ready for {len(_levels['pdh'])} symbols")
     except Exception as e:
         _diag["running"] = False
@@ -491,6 +528,8 @@ def _warm_opening_range():
 def _bg_worker():
     while True:
         try:
+            if not _levels["pdh"]:
+                _levels_load()          # reuse today's work after a restart
             _load_tokens()
             OC.set_universe(list(UNIVERSE.keys()))
             OC._load_master()          # non-blocking; warms in background
@@ -500,6 +539,8 @@ def _bg_worker():
             _warm_opening_range()
             if len(_levels["orh"]) < 20:
                 _warm_or_yahoo()
+            if _levels["pdh"]:
+                _levels_save()
         except Exception as e:
             print("bg worker error:", e)
         time.sleep(120)
