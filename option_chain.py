@@ -30,6 +30,38 @@ def set_universe(symbols):
     WANT_NAMES.update(s.strip().upper() for s in (symbols or []) if s)
     print(f"[optchain] master will keep {len(WANT_NAMES)} underlyings")
 
+MASTER_FILE = "/tmp/krt_optmaster.json"
+
+
+def _master_load():
+    """Reuse today's parsed contracts after a worker restart.
+
+    Without this, every Render restart re-streams the ~150MB scrip master.
+    Until that finished get_chain() returned None, which is why index cards
+    showed no PCR, no max pain and no premium entry — conf stayed at 1.
+    """
+    try:
+        with open(MASTER_FILE) as f:
+            d = json.load(f)
+        if time.time() - d.get("ts", 0) < 86400 and d.get("rows"):
+            _master.update(rows=d["rows"], ts=d["ts"])
+            print(f"[optchain] restored {len(d['rows'])} contracts from disk")
+            return True
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print("[optchain] cache read failed:", str(e)[:110])
+    return False
+
+
+def _master_save():
+    try:
+        with open(MASTER_FILE, "w") as f:
+            json.dump({"ts": _master["ts"], "rows": _master["rows"]}, f)
+    except Exception as e:
+        print("[optchain] cache write failed:", str(e)[:110])
+
+
 SCRIP_MASTER_URL = ("https://margincalculator.angelbroking.com/OpenAPI_File/"
                     "files/OpenAPIScripMaster.json")
 
@@ -49,6 +81,8 @@ def _load_master(blocking=False):
     Default-a non-blocking: background thread download pannum, request udane
     return aagum (chain andha poll-la illa, adutha poll-la varum)."""
     if _master["rows"] and time.time() - _master["ts"] < 86400:
+        return _master["rows"]
+    if _master_load():
         return _master["rows"]
     if not blocking:
         if not _master["loading"]:
@@ -97,6 +131,7 @@ def _load_master(blocking=False):
                                 start = None
                 buf = buf[cut:]                  # incomplete tail mattum meethi
         _master.update(rows=opts, ts=time.time())
+        _master_save()
         print(f"[optchain] master loaded (streamed): {kept} option contracts")
     except Exception as e:
         print("[optchain] master error:", e)
@@ -286,4 +321,3 @@ def est_delta(spot, strike, side, step):
     if steps_otm < 1.5:   return 0.35
     if steps_otm < 2.5:   return 0.22
     return 0.14
-
