@@ -32,6 +32,9 @@ def set_universe(symbols):
 
 import store as _ST
 MASTER_FILE = _ST.path("krt_optmaster.json")
+# Hard ceiling so a parse can never grow until the worker is OOM-killed.
+# ~45k rows covers the near expiries of every underlying we track.
+MAX_CONTRACTS = 45000
 
 
 def _master_load():
@@ -45,22 +48,49 @@ def _master_load():
         with open(MASTER_FILE) as f:
             d = json.load(f)
         if time.time() - d.get("ts", 0) < 86400 and d.get("rows"):
+            today = _ist().date()
+            rows = []
+            for x in d["rows"]:
+                try:
+                    if datetime.strptime(str(x.get("expiry")), "%d%b%Y").date() >= today:
+                        rows.append(x)
+                except Exception:
+                    pass
+            d["rows"] = rows[:MAX_CONTRACTS]
             _master.update(rows=d["rows"], ts=d["ts"])
             print(f"[optchain] restored {len(d['rows'])} contracts from disk")
             return True
     except FileNotFoundError:
         pass
     except Exception as e:
-        print("[optchain] cache read failed:", str(e)[:110])
+        print("[optchain] cache read failed, discarding:", str(e)[:90])
+        try:
+            os.remove(MASTER_FILE)      # corrupt: rebuild rather than retry it
+        except Exception:
+            pass
     return False
 
 
 def _master_save():
+    """Atomic write.
+
+    This used to json.dump() straight into the real file. When the worker was
+    OOM-killed mid-write the file was left half finished, and every restart
+    after that failed to read it ("Expecting property name..."), so the cache
+    never helped. Write to a temp file and rename — a rename is atomic, so the
+    real file is either the old one or the complete new one, never a fragment.
+    """
+    tmp = MASTER_FILE + ".tmp"
     try:
-        with open(MASTER_FILE, "w") as f:
+        with open(tmp, "w") as f:
             json.dump({"ts": _master["ts"], "rows": _master["rows"]}, f)
+        os.replace(tmp, MASTER_FILE)
     except Exception as e:
         print("[optchain] cache write failed:", str(e)[:110])
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
 
 
 SCRIP_MASTER_URL = ("https://margincalculator.angelbroking.com/OpenAPI_File/"
@@ -101,6 +131,19 @@ def _load_master(blocking=False):
         # free tier (512MB) OOM-kill aagum. Adhanaala oru object-a mattum
         # parse panni, thevaiyaanadha mattum vechukirom (peak ~30MB).
         want = set(WANT_NAMES) if WANT_NAMES else None
+        # Free tier is 512MB and the worker was being SIGKILLed. Every strike
+        # of every expiry for 149 underlyings is hundreds of thousands of
+        # rows; we only ever quote the nearest expiry, so drop the rest while
+        # parsing instead of holding them in RAM.
+        _today = _ist().date()
+        _keep_until = _today + timedelta(days=45)
+
+        def _expiry_ok(v):
+            try:
+                d = datetime.strptime(str(v), "%d%b%Y").date()
+            except Exception:
+                return False
+            return _today <= d <= _keep_until
         req = urllib.request.Request(SCRIP_MASTER_URL, headers={"User-Agent": "KRT"})
         # Keep whatever was already cached: the connection is cut a little way
         # into this 150MB file, so a single pass only ever sees a slice of the
@@ -137,7 +180,9 @@ def _load_master(blocking=False):
                                     x = json.loads(buf[start:i + 1])
                                     if (x.get("exch_seg") == "NFO"
                                             and x.get("instrumenttype") in ("OPTSTK", "OPTIDX")
-                                            and (want is None or x.get("name") in want)):
+                                            and (want is None or x.get("name") in want)
+                                            and _expiry_ok(x.get("expiry"))
+                                            and len(opts) < MAX_CONTRACTS):
                                         tk = x.get("token")
                                         if tk not in seen:
                                             seen.add(tk)
@@ -150,6 +195,14 @@ def _load_master(blocking=False):
                                 cut = i + 1
                                 start = None
                 buf = buf[cut:]                  # incomplete tail mattum meethi
+                if len(buf) > 4 << 20:
+                    # A 4MB tail means we are not finding object boundaries;
+                    # dropping it costs a few contracts and prevents the
+                    # buffer growing until the worker is killed.
+                    buf = ""
+                if len(opts) >= MAX_CONTRACTS:
+                    print("[optchain] hit contract cap, stopping parse")
+                    break
         if opts:
             _master.update(rows=opts, ts=time.time())
             _master_save()
