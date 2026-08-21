@@ -453,7 +453,7 @@ def _warm_levels():
         _diag["login"] = "ok"
         tmap = _load_tokens()
         frm = (_ist_now() - timedelta(days=20)).strftime("%Y-%m-%d 09:15")
-        to = _ist_now().strftime("%Y-%m-%d 15:30")
+              to = _ist_now().strftime("%Y-%m-%d 15:30")
         for sym, tok in tmap.items():
             try:
                 r = sc.getCandleData({"exchange": "NSE", "symboltoken": tok,
@@ -685,6 +685,54 @@ def build_dashboard():
         _building.release()
 
 
+
+def _refresh_stock_opts(rows):
+    """Keep premiums live for stock-option calls that are still open.
+
+    Index options already get refreshed because the whole index chain is
+    re-read every poll. Stock options were only ever written once, at entry,
+    so the tracker compared the entry price against itself and every call
+    showed +0% RUNNING and could never hit a target or a stop.
+    """
+    try:
+        open_syms = set()
+        for sig in IND.open_signals() or []:
+            sym = sig.get("sym") or ""
+            parts = sym.split()
+            if len(parts) == 3 and parts[2] in ("CE", "PE"):
+                open_syms.add(parts[0])
+        if not open_syms:
+            return
+        m = _ist_now().hour * 60 + _ist_now().minute
+        if not (540 <= m <= 935):
+            return
+        spot_of = {r["symbol"]: r.get("ltp") for r in (rows or [])}
+        for und in list(open_syms)[:12]:          # cap the API load per poll
+            spot = spot_of.get(und)
+            if not spot:
+                continue
+            ch = OC.get_chain(und, spot)          # cached, so this is cheap
+            if not ch:
+                continue
+            for sd, key in (("CE", "strikes_ce"), ("PE", "strikes_pe")):
+                for k, v in (ch.get(key) or {}).items():
+                    try:
+                        ltp = v.get("ltp")
+                        if not ltp:
+                            continue
+                        sym = f"{und} {int(float(k))} {sd}"
+                        p = float(ltp)
+                        _opt_px[sym] = p
+                        lo = float(v.get("low") or p)
+                        hi = float(v.get("high") or p)
+                        _opt_lo[sym] = min(_opt_lo.get(sym, lo), lo, p)
+                        _opt_hi[sym] = max(_opt_hi.get(sym, hi), hi, p)
+                    except Exception:
+                        continue
+    except Exception as e:
+        print("[optpx] stock refresh error:", str(e)[:110])
+
+
 def _build_dashboard_inner():
     rows, mode = get_quotes()
     indices = [r for r in rows if r["symbol"] in INDICES]
@@ -860,7 +908,7 @@ def _build_dashboard_inner():
             if not px or hi <= lo:
                 continue
             rng = hi - lo
-            vwap = ind.get("vwap")
+                     vwap = ind.get("vwap")
             atr = ind.get("atr") or rng * 0.25
             pos = (px - lo) / rng if rng else 0.5      # where in day range
             rk = srank2.get(r["sector"], 99)
@@ -1202,6 +1250,7 @@ def _build_dashboard_inner():
                             f"{'Bullish' if side=='CE' else 'Bearish'} setup — trade {side} on dips"),
             })
         index_setups.sort(key=lambda x: -x["score"])
+        _refresh_stock_opts(rows)
         if _opt_px:
             # Stop first, then target. Feeding the low before the high means a
             # premium that touched the stop is reported as a stop, even if it
@@ -1234,7 +1283,7 @@ def _build_dashboard_inner():
                 strikes = [{"strike": int(atm), "type": "CE", "label": "ATM"},
                            {"strike": int(atm + step), "type": "CE", "label": "OTM 1"},
                            {"strike": int(atm + 2 * step), "type": "CE", "label": "OTM 2"}]
-                view = "Bullish — CE side"
+                view = "Bull 
             else:
                 strikes = [{"strike": int(atm), "type": "PE", "label": "ATM"},
                            {"strike": int(atm - step), "type": "PE", "label": "OTM 1"},
@@ -1255,7 +1304,10 @@ def _build_dashboard_inner():
                                best.get("sl"), best.get("t1"), best.get("t2"),
                                best.get("t3"), entry_spot=zmid)
                 if opt:
-                    _opt_px.setdefault(opt["symbol"], opt["entry"])
+                    # setdefault wrote the entry premium once and never again,
+                    # so every stock option call sat on +0% RUNNING forever.
+                    # _refresh_stock_opts() below keeps it live instead.
+                    _opt_px[opt["symbol"]] = opt["entry"]
                     IND.log_signal(opt["symbol"], "BUY", opt["entry"], opt["sl"],
                                    opt["t1"], opt["t2"], opt["t3"], best["score"],
                                    f"{best['symbol']} {best['side']} · {opt['why']}",
@@ -1311,4 +1363,4 @@ def _build_dashboard_inner():
                         "orh": len(_levels["orh"])},
         "universe": len(stocks),
         "updated": time.strftime("%H:%M:%S", time.gmtime(time.time() + 19800)),
-    }
+  }
