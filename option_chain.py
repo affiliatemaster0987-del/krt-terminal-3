@@ -81,7 +81,11 @@ def _load_master(blocking=False):
     """Master file ~150MB — request-kulla download panna dashboard hang aagum.
     Default-a non-blocking: background thread download pannum, request udane
     return aagum (chain andha poll-la illa, adutha poll-la varum)."""
-    if _master["rows"] and time.time() - _master["ts"] < 86400:
+    # A partial map should keep being topped up. Only treat it as done for the
+    # day once it covers most of the universe we asked for.
+    have = {x.get("name") for x in (_master["rows"] or [])}
+    full = WANT_NAMES and len(have) >= len(WANT_NAMES) * 0.8
+    if _master["rows"] and time.time() - _master["ts"] < (86400 if full else 900):
         return _master["rows"]
     if _master_load():
         return _master["rows"]
@@ -98,10 +102,22 @@ def _load_master(blocking=False):
         # parse panni, thevaiyaanadha mattum vechukirom (peak ~30MB).
         want = set(WANT_NAMES) if WANT_NAMES else None
         req = urllib.request.Request(SCRIP_MASTER_URL, headers={"User-Agent": "KRT"})
-        opts, buf, kept = [], "", 0
+        # Keep whatever was already cached: the connection is cut a little way
+        # into this 150MB file, so a single pass only ever sees a slice of the
+        # symbols. Merging passes is what eventually fills the map in.
+        opts = list(_master["rows"] or [])
+        seen = {(x.get("token")) for x in opts}
+        before, buf, kept = len(opts), "", 0
         with urllib.request.urlopen(req, timeout=120) as r:
             while True:
-                chunk = r.read(1 << 20)          # 1 MB at a time
+                try:
+                    chunk = r.read(1 << 20)      # 1 MB at a time
+                except Exception as ce:
+                    # Truncated. Everything parsed so far is still good — the
+                    # old code threw it all away here, which is why stock
+                    # chains never appeared.
+                    print("[optchain] stream cut:", str(ce)[:90])
+                    break
                 if not chunk:
                     break
                 buf += chunk.decode("utf-8", "ignore")
@@ -122,20 +138,36 @@ def _load_master(blocking=False):
                                     if (x.get("exch_seg") == "NFO"
                                             and x.get("instrumenttype") in ("OPTSTK", "OPTIDX")
                                             and (want is None or x.get("name") in want)):
-                                        opts.append({k: x.get(k) for k in
-                                                     ("token", "symbol", "name", "expiry",
-                                                      "strike", "instrumenttype")})
-                                        kept += 1
+                                        tk = x.get("token")
+                                        if tk not in seen:
+                                            seen.add(tk)
+                                            opts.append({k: x.get(k) for k in
+                                                         ("token", "symbol", "name", "expiry",
+                                                          "strike", "instrumenttype")})
+                                            kept += 1
                                 except Exception:
                                     pass
                                 cut = i + 1
                                 start = None
                 buf = buf[cut:]                  # incomplete tail mattum meethi
-        _master.update(rows=opts, ts=time.time())
-        _master_save()
-        print(f"[optchain] master loaded (streamed): {kept} option contracts")
+        if opts:
+            _master.update(rows=opts, ts=time.time())
+            _master_save()
+            names = len({x.get("name") for x in opts})
+            print(f"[optchain] master: {len(opts)} contracts across {names} "
+                  f"underlyings (+{kept} new this pass)")
+        else:
+            print("[optchain] master: nothing parsed this pass")
     except Exception as e:
-        print("[optchain] master error:", e)
+        # Even on a hard failure, persist anything collected before the error.
+        try:
+            if 'opts' in dir() and opts and len(opts) > before:
+                _master.update(rows=opts, ts=time.time())
+                _master_save()
+                print(f"[optchain] kept {len(opts)} contracts despite error")
+        except Exception:
+            pass
+        print("[optchain] master error:", str(e)[:120])
     _master["loading"] = False
     return _master["rows"]
 
