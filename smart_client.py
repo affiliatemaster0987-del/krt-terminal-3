@@ -187,29 +187,71 @@ def _load_tokens():
     global _tokens, _tokens_ready
     if _tokens_ready:
         return _tokens
-    try:
-        req = urllib.request.Request(SCRIP_MASTER_URL,
-                                     headers={"User-Agent": "KRT-Terminal"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            rows = json.loads(r.read().decode())
-        want = set(UNIVERSE.keys())
-        found = {}
-        for row in rows:
-            if row.get("exch_seg") != "NSE":
-                continue
-            sym = str(row.get("symbol", ""))
-            if not sym.endswith("-EQ"):
-                continue
-            name = sym[:-3]
-            if name in want and name not in found:
-                found[name] = str(row.get("token"))
-        _tokens = found
+    # Tokens barely change. Reuse yesterday's map rather than re-downloading a
+    # ~37MB file on every restart — that download kept dying half way through
+    # with IncompleteRead, and one failure took the whole dashboard down.
+    cached = _ST.read_json("krt_tokens.json") or {}
+    if isinstance(cached, dict) and cached.get("tokens"):
+        if time.time() - cached.get("ts", 0) < 7 * 86400:
+            _tokens = cached["tokens"]
+            _tokens_ready = True
+            _diag["tokens"] = len(_tokens)
+            print(f"[scrip master] {len(_tokens)} tokens from disk cache")
+            return _tokens
+
+    want = set(UNIVERSE.keys())
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            req = urllib.request.Request(
+                SCRIP_MASTER_URL,
+                headers={"User-Agent": "KRT-Terminal",
+                         "Accept-Encoding": "identity"})   # gzip made the
+                                                           # truncation worse
+            buf = bytearray()
+            with urllib.request.urlopen(req, timeout=180) as r:
+                while True:
+                    chunk = r.read(1 << 18)      # 256 KB at a time
+                    if not chunk:
+                        break
+                    buf.extend(chunk)
+            rows = json.loads(bytes(buf).decode("utf-8", "ignore"))
+            found = {}
+            for row in rows:
+                if row.get("exch_seg") != "NSE":
+                    continue
+                sym = str(row.get("symbol", ""))
+                if not sym.endswith("-EQ"):
+                    continue
+                name = sym[:-3]
+                if name in want and name not in found:
+                    found[name] = str(row.get("token"))
+            if not found:
+                raise ValueError("no NSE equity tokens in payload")
+            _tokens = found
+            _tokens_ready = True
+            _diag["tokens"] = len(found)
+            _ST.write_json("krt_tokens.json",
+                           {"ts": time.time(), "tokens": found})
+            print(f"[scrip master] resolved {len(found)}/{len(want)} tokens "
+                  f"(attempt {attempt})")
+            return _tokens
+        except Exception as e:
+            last_err = e
+            print(f"scrip master attempt {attempt}/3 failed:", str(e)[:140])
+            time.sleep(3 * attempt)
+
+    # Every attempt failed. Fall back to a stale cache of any age rather than
+    # leaving the terminal with zero tokens, which is what killed the worker.
+    if isinstance(cached, dict) and cached.get("tokens"):
+        _tokens = cached["tokens"]
         _tokens_ready = True
-        _diag["tokens"] = len(found)
-        print(f"[scrip master] resolved {len(found)}/{len(want)} tokens")
-    except Exception as e:
-        _diag["last_error"] = "scrip master: " + str(e)[:200]
-        print("scrip master error:", e)
+        _diag["tokens"] = len(_tokens)
+        print(f"[scrip master] network failed, using stale cache "
+              f"({len(_tokens)} tokens)")
+    else:
+        _diag["last_error"] = "scrip master: " + str(last_err)[:200]
+        print("scrip master: all attempts failed:", str(last_err)[:160])
     return _tokens
 
 
@@ -681,6 +723,24 @@ def build_dashboard():
         d = _build_dashboard_inner()
         _dash.update(data=d, ts=time.time())
         return d
+    except Exception as e:
+        # One flaky download used to raise all the way out to gunicorn, which
+        # killed the worker and returned 500 for /api/dashboard. Serve the
+        # last good snapshot instead and report the fault on the page.
+        import traceback
+        traceback.print_exc()
+        print("[dashboard] build failed:", str(e)[:200])
+        if _dash["data"]:
+            return {**_dash["data"], "stale": True,
+                    "error_note": str(e)[:160]}
+        return {"error": str(e)[:160], "mode": "starting",
+                "indices": [], "gainers": [], "losers": [], "volume": [],
+                "sectors": [], "alerts": [], "confluence": [],
+                "announcements": [], "results_diary": [], "or5": [],
+                "index_setups": [], "zones": [], "structure": [],
+                "breaks": {}, "preopen": {}, "status": {}, "breadth": {},
+                "mood": {}, "session": {}, "index_bias": {},
+                "tracker": {}, "confl_diag": {}}
     finally:
         _building.release()
 
