@@ -213,42 +213,72 @@ def _load_tokens(blocking=False):
 
     want = set(UNIVERSE.keys())
     last_err = None
+    # Only ~1.3MB of a 37MB file survives each try, so one pass sees only a
+    # slice of the symbols. Start from whatever is already cached and add to
+    # it: across attempts and across restarts the map fills itself in.
+    found = dict(cached.get("tokens") or {}) if isinstance(cached, dict) else {}
+    before = len(found)
     for attempt in range(1, 4):
         try:
             req = urllib.request.Request(
                 SCRIP_MASTER_URL,
                 headers={"User-Agent": "KRT-Terminal",
-                         "Accept-Encoding": "identity"})   # gzip made the
-                                                           # truncation worse
-            buf = bytearray()
-            with urllib.request.urlopen(req, timeout=180) as r:
+                         "Accept-Encoding": "identity"})
+            # The connection keeps being cut about 1.3MB into a 37MB file, so
+            # json.loads() on the whole body can never work here. Parse object
+            # by object as bytes arrive and keep whatever tokens we manage to
+            # see — a partial list still runs the terminal, an exception does
+            # not. Same technique option_chain.py already uses.
+            buf, depth, start, got = "", 0, None, 0
+            with urllib.request.urlopen(req, timeout=90) as r:
                 while True:
-                    chunk = r.read(1 << 18)      # 256 KB at a time
+                    try:
+                        chunk = r.read(1 << 18)
+                    except Exception as ce:
+                        last_err = ce           # truncated: keep what we have
+                        break
                     if not chunk:
                         break
-                    buf.extend(chunk)
-            rows = json.loads(bytes(buf).decode("utf-8", "ignore"))
-            found = {}
-            for row in rows:
-                if row.get("exch_seg") != "NSE":
-                    continue
-                sym = str(row.get("symbol", ""))
-                if not sym.endswith("-EQ"):
-                    continue
-                name = sym[:-3]
-                if name in want and name not in found:
-                    found[name] = str(row.get("token"))
-            if not found:
-                raise ValueError("no NSE equity tokens in payload")
-            _tokens = found
-            _tokens_ready = True
-            _diag["tokens"] = len(found)
-            _ST.write_json("krt_tokens.json",
-                           {"ts": time.time(), "tokens": found})
-            print(f"[scrip master] resolved {len(found)}/{len(want)} tokens "
-                  f"(attempt {attempt})")
-            _tok_load["running"] = False
-            return _tokens
+                    buf += chunk.decode("utf-8", "ignore")
+                    cut = 0
+                    for k, ch in enumerate(buf):
+                        if ch == "{":
+                            if depth == 0:
+                                start = k
+                            depth += 1
+                        elif ch == "}":
+                            if depth > 0:
+                                depth -= 1
+                                if depth == 0 and start is not None:
+                                    try:
+                                        row = json.loads(buf[start:k + 1])
+                                        if row.get("exch_seg") == "NSE":
+                                            sym = str(row.get("symbol", ""))
+                                            if sym.endswith("-EQ"):
+                                                nm = sym[:-3]
+                                                if nm in want and nm not in found:
+                                                    found[nm] = str(row.get("token"))
+                                                    got += 1
+                                    except Exception:
+                                        pass
+                                    cut = k + 1
+                                    start = None
+                    buf = buf[cut:]
+                    if len(found) >= len(want):
+                        break                   # every token we need, stop early
+            if found:
+                _tokens = found
+                # Only call it done once we actually have the whole universe;
+                # a partial map should be retried on the next warm cycle.
+                _tokens_ready = len(found) >= len(want) * 0.9
+                _diag["tokens"] = len(found)
+                _ST.write_json("krt_tokens.json",
+                               {"ts": time.time(), "tokens": found})
+                print(f"[scrip master] {len(found)}/{len(want)} tokens "
+                      f"(+{len(found) - before} new, attempt {attempt}, streamed)")
+                _tok_load["running"] = False
+                return _tokens
+            raise ValueError("no NSE equity tokens seen before the stream ended")
         except Exception as e:
             last_err = e
             print(f"scrip master attempt {attempt}/3 failed:", str(e)[:140])
