@@ -118,6 +118,7 @@ _struct_seen = {}          # {"BHEL|BREAKOUT": "13:28"} — alert first-seen tim
 _preopen = {"day": "", "rows": [], "final": False}
 _diag = {"source": "angel", "tokens": 0, "pdh_ok": 0, "orh_ok": 0, "last_error": "", "sample_error": "",
          "login": "not tried", "running": False, "started": ""}
+_tok_load = {"running": False}
 _lock = threading.Lock()
 
 # ── LEVELS DISK CACHE ────────────────────────────────────────────────────
@@ -182,7 +183,7 @@ def _login():
 
 
 # ───────────────────────── instrument master (token resolve) ─────────────────────────
-def _load_tokens():
+def _load_tokens(blocking=False):
     """Angel scrip master-la irundhu NSE equity tokens resolve pannum (once)."""
     global _tokens, _tokens_ready
     if _tokens_ready:
@@ -198,6 +199,17 @@ def _load_tokens():
             _diag["tokens"] = len(_tokens)
             print(f"[scrip master] {len(_tokens)} tokens from disk cache")
             return _tokens
+
+    # The download is ~37MB and can take a minute. Run inside a web request it
+    # blew past gunicorn's worker timeout, the master sent SIGABRT, and the
+    # worker died with SystemExit -> /api/dashboard 500. Never block a request:
+    # kick it off in the background and answer with whatever we have.
+    if not blocking:
+        if not _tok_load["running"]:
+            _tok_load["running"] = True
+            threading.Thread(target=lambda: _load_tokens(blocking=True),
+                             daemon=True).start()
+        return _tokens
 
     want = set(UNIVERSE.keys())
     last_err = None
@@ -235,6 +247,7 @@ def _load_tokens():
                            {"ts": time.time(), "tokens": found})
             print(f"[scrip master] resolved {len(found)}/{len(want)} tokens "
                   f"(attempt {attempt})")
+            _tok_load["running"] = False
             return _tokens
         except Exception as e:
             last_err = e
@@ -252,6 +265,7 @@ def _load_tokens():
     else:
         _diag["last_error"] = "scrip master: " + str(last_err)[:200]
         print("scrip master: all attempts failed:", str(last_err)[:160])
+    _tok_load["running"] = False
     return _tokens
 
 
@@ -573,7 +587,7 @@ def _bg_worker():
         try:
             if not _levels["pdh"]:
                 _levels_load()          # reuse today's work after a restart
-            _load_tokens()
+            _load_tokens(blocking=True)
             OC.set_universe(list(UNIVERSE.keys()))
             OC._load_master()          # non-blocking; warms in background
             _warm_levels()
