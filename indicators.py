@@ -238,8 +238,14 @@ def indicators(sym):
         return {"ready": False, "bars": len(cs)}
     closes = [c["c"] for c in cs]
     e9, e21 = _ema(closes, 9), _ema(closes, 21)
+    # RSI 0.0 / RSI 100.0 / ADX 100.0 were appearing on signal cards. Those are
+    # not real readings — they come from a handful of candles that all move the
+    # same way right after a restart. Require a real sample before calling the
+    # indicators usable, so no signal is built on them.
+    rsi_v = _rsi(closes)
+    degenerate = (rsi_v is not None and (rsi_v <= 1 or rsi_v >= 99))
     out = {
-        "ready": len(cs) >= 20, "bars": len(cs),
+        "ready": len(cs) >= 20 and not degenerate, "bars": len(cs),
         "rsi": round(_rsi(closes), 1) if _rsi(closes) is not None else None,
         "ema9": round(e9, 2) if e9 else None,
         "ema21": round(e21, 2) if e21 else None,
@@ -411,6 +417,13 @@ def _mins_since(hhmm, date):
 
 def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="", source="JACKPOT"):
     """Cooldown: same stock+side 15 min-ku ulla thirumba log aagadhu."""
+    # There was no time gate at all, so calls were being logged at 15:50 and
+    # even 16:25 — after the close, on frozen prices. Those are the rows that
+    # later showed impossible numbers. Only log inside 9:15am-3:15pm.
+    n = _ist()
+    mins = n.hour * 60 + n.minute
+    if n.weekday() >= 5 or not (555 <= mins <= 915):
+        return None
     _sync()
     today = _ist().strftime("%Y-%m-%d")
     for s in reversed(_signals):
@@ -440,6 +453,13 @@ def open_signals():
 
 
 def update_tracker(price_map):
+    # Pre-open prints and post-close snapshots are not tradable prices. Judging
+    # a call against them is what produced "SL HIT -83%" on a 0.6% stop at
+    # 08:40. Only mark hits while the market is actually open.
+    n0 = _ist()
+    m0 = n0.hour * 60 + n0.minute
+    if n0.weekday() >= 5 or not (555 <= m0 <= 930):
+        return []
     _sync()
     changed = []
     now = _ist().strftime("%H:%M")
@@ -447,7 +467,14 @@ def update_tracker(price_map):
         if s["status"] in ("TARGET COMPLETED", "SL HIT", "EXPIRED"):
             continue
         px = price_map.get(s["sym"])
-        if not px:
+        if not px or px <= 0:
+            continue
+        # A cash stock does not move 80% intraday. A price that far from entry
+        # is bad data (stale feed, wrong key, pre-open print) — skip it rather
+        # than write a nonsense result that poisons the accuracy figures.
+        is_opt = len(str(s["sym"]).split()) == 3
+        limit = 3.0 if is_opt else 0.25          # options can genuinely swing
+        if abs(px - s["entry"]) / s["entry"] > limit:
             continue
         buy = s["side"] == "BUY"
         # best price after signal
