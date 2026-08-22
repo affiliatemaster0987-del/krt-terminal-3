@@ -360,7 +360,6 @@ $('conflSend') && ($('conflSend').onclick=()=>{
     `${c.symbol} ${c.side} · ${c.grade} ${c.label} · ${c.setup}\nE ${c.entry} · SL ${c.sl} · T1 ${c.t1}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
-
 /* ---------- corporate filings + results diary ---------- */
 const ANNCLS={'ORDER WIN':'up','APPROVAL':'up','EXPANSION':'up','CASH':'up',
   'FAVOURABLE ORDER':'up','ORDER LOSS':'dn','REGULATORY':'dn','STRESS':'dn',
@@ -484,6 +483,11 @@ function renderChartink(list){
         <span class="tm">${tm}</span>
         <span class="stt">${nm}</span></div>
       ${px?`<div class="sr-lv">Trigger: ${px}</div>`:''}
+      ${(()=>{ const p=parseFloat(String(px).split(',')[0]);
+         if(!p) return '';
+         const sd=bear?'PE':'CE'; const q=timeQuality(tm);
+         return `<div class="sr-lv"><span class="opt-sug">${(st||'').split(',')[0]} ${atmStrike(p)} ${sd} ${expiryTag()}</span>`
+              + (q?`<span class="tq tq-${q.k}">⏱ ${q.txt}</span>`:'') + `</div>`; })()}
     </div>`;
   }).join('') : `<div class="empty">No scanner calls yet — create a Chartink alert with this webhook URL</div>`;
 }
@@ -568,6 +572,9 @@ function renderTradeLog(t){
 /* ---------- structure alerts ---------- */
 
 /* ---------- monthly F&O expiry label, e.g. "SEP" ---------- */
+function nowHM(){
+  const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
 function expiryTag(){
   const M=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const now=new Date();
@@ -683,7 +690,6 @@ $('idxSend') && ($('idxSend').onclick=()=>{
     `${x.index}: ${x.side||'WAIT'} ${x.score}/100 · spot ${x.spot} (${x.chg>=0?'+':''}${x.chg}%)${x.strikes&&x.strikes.length?` · ${x.opt} ${x.strikes[0].strike} ${x.strikes[0].type}`:''}\n   ${x.verdict}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
-
 /* ---------- session + index bias ---------- */
 function renderSession(sess, ib){
   if(sess && $('sessPill')){
@@ -884,6 +890,7 @@ function renderNewsSignals(sig){
       <div class="sig-top"><b class="sym">${n.symbol}</b><span class="chip up">${n.tag}</span>
         <span class="impact">${n.impact}/10 · ${n.ago||''}</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
       <div class="nh">${n.headline}</div>
+      ${n.ltp?`<div class="sr-lv"><span class="opt-sug">${n.symbol} ${atmStrike(n.ltp)} CE ${expiryTag()}</span>${(()=>{const q=timeQuality(n.at||nowHM());return q?`<span class="tq tq-${q.k}">⏱ ${q.txt}</span>`:'';})()}</div>`:''}
       <div class="sig-foot"><span class="up">${n.verdict}</span>
         <button class="btn wa mini" onclick="openWA(${JSON.stringify('📰 NEWS JACKPOT\n\n'+n.symbol+'\n'+n.headline+'\n\n'+n.verdict+'\n\n⚠ Educational only.').replace(/"/g,'&quot;')})">🟢 WA</button></div>
     </div>`).join('') : `<div class="empty">No fresh positive news (last 6 hrs)</div>`;
@@ -898,6 +905,7 @@ function renderNewsSignals(sig){
       <div class="sig-top"><b class="sym">${n.symbol}</b><span class="chip dn">${n.tag}</span>
         <span class="impact">${n.impact}/10 · ${n.ago||''}</span>${n.chg!=null?`<span class="${n.chg>=0?'up':'dn'}">${n.chg>=0?'▲':'▼'}${Math.abs(n.chg)}%</span>`:''}</div>
       <div class="nh">${n.headline}</div>
+      ${n.ltp?`<div class="sr-lv"><span class="opt-sug">${n.symbol} ${atmStrike(n.ltp)} PE ${expiryTag()}</span></div>`:''}
       <div class="sig-foot"><span class="dn">${n.verdict}</span></div>
     </div>`).join('')) || `<div class="empty">No fresh negative news (last 6 hrs) 👍</div>`;
 
@@ -992,4 +1000,3 @@ async function refreshNews(){
 refresh(); refreshNews();
 setInterval(refresh, CONFIG.REFRESH_MS);
 setInterval(refreshNews, 90000);          // news every 90s — much lighter
-
