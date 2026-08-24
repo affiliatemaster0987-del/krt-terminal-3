@@ -472,6 +472,11 @@ def update_tracker(price_map):
         # A cash stock does not move 80% intraday. A price that far from entry
         # is bad data (stale feed, wrong key, pre-open print) — skip it rather
         # than write a nonsense result that poisons the accuracy figures.
+        # A call cannot legitimately finish in the same minute it was given.
+        # When that happened it was always stale/extreme data, never a real
+        # stop being taken out.
+        if s.get("ts") == now and s["status"] == "LIVE":
+            continue
         is_opt = len(str(s["sym"]).split()) == 3
         limit = 3.0 if is_opt else 0.25          # options can genuinely swing
         if abs(px - s["entry"]) / s["entry"] > limit:
