@@ -737,13 +737,46 @@ def _market_mood(stocks, indices, crash=0, news_neg=0):
     elif m in ("FEAR", "WEAK"):
         focus = "PE"
 
+    # How hard is the instruction? A crash headline on weak breadth is a very
+    # different message from "mildly favour PE", but both used to read the
+    # same on the card. Grade it so the page can show the strength.
+    strength, action, why = 1, "", ""
+    if focus == "PE":
+        if crash and breadth < 50:
+            strength, action = 3, "DO NOT BUY — PE ONLY"
+            why = f"crash headline + breadth {breadth}%"
+        elif crash or (news_neg >= 3 and breadth < 45):
+            strength, action = 2, "PE SIDE — AVOID FRESH LONGS"
+            why = (f"crash headline, breadth {breadth}%" if crash
+                   else f"{news_neg} negative headlines, breadth {breadth}%")
+        else:
+            strength, action = 1, "LEAN PE"
+            why = f"breadth {breadth}%"
+    elif focus == "CE":
+        if m == "GREED" or (breadth >= 75 and vix_chg < 0):
+            strength, action = 3, "STRONG CE — TREND DAY"
+            why = f"breadth {breadth}%, VIX {vix_chg:+.1f}%"
+        elif breadth >= 65:
+            strength, action = 2, "CE SIDE — LONGS WORK"
+            why = f"breadth {breadth}%"
+        else:
+            strength, action = 1, "LEAN CE"
+            why = f"breadth {breadth}%"
+    else:
+        strength, action, why = 0, "NO CLEAR SIDE — WAIT", f"breadth {breadth}%"
+
+    # A crash headline still matters on a green tape. Say so instead of
+    # letting the happy wording bury it.
+    if crash and focus == "CE":
+        action = "CE BUT CRASH HEADLINE LIVE — SMALL SIZE"
+        strength = max(strength - 1, 1)
+
     return {"mood": m, "emoji": e, "note": note, "breadth": breadth,
             "vix_chg": vix_chg, "nifty_chg": nf,
             "focus": focus, "alert": alert,
+            "strength": strength, "action": action, "why": why,
             "crash": crash, "neg_news": news_neg,
-            "headline": ("DO NOT BUY — FOCUS PE" if focus == "PE" and m == "FEAR"
-                         else "FAVOUR PE SIDE" if focus == "PE"
-                         else "FAVOUR CE SIDE" if focus == "CE" else None)}
+            "headline": action or None}
 
 
 _dash = {"data": None, "ts": 0}
@@ -827,10 +860,8 @@ def _refresh_stock_opts(rows):
                         sym = f"{und} {int(float(k))} {sd}"
                         p = float(ltp)
                         _opt_px[sym] = p
-                        lo = float(v.get("low") or p)
-                        hi = float(v.get("high") or p)
-                        _opt_lo[sym] = min(_opt_lo.get(sym, lo), lo, p)
-                        _opt_hi[sym] = max(_opt_hi.get(sym, hi), hi, p)
+                        _opt_lo[sym] = min(_opt_lo.get(sym, p), p)
+                        _opt_hi[sym] = max(_opt_hi.get(sym, p), p)
                     except Exception:
                         continue
     except Exception as e:
@@ -1258,12 +1289,11 @@ def _build_dashboard_inner():
                                 _sym = f"{opt} {int(float(_k))} {_sd}"
                                 _p = float(_v["ltp"])
                                 _opt_px[_sym] = _p
-                                _lo = _v.get("low") or _v.get("dayLow")
-                                _hi = _v.get("high") or _v.get("dayHigh")
-                                _lo = float(_lo) if _lo else _p
-                                _hi = float(_hi) if _hi else _p
-                                _opt_lo[_sym] = min(_opt_lo.get(_sym, _lo), _lo, _p)
-                                _opt_hi[_sym] = max(_opt_hi.get(_sym, _hi), _hi, _p)
+                                # Track only what we have actually seen since
+                                # this process started watching the strike —
+                                # never the exchange's full-session range.
+                                _opt_lo[_sym] = min(_opt_lo.get(_sym, _p), _p)
+                                _opt_hi[_sym] = max(_opt_hi.get(_sym, _p), _p)
                         except Exception:
                             pass
                 if chain["bias"] == "BULLISH": bull += 2; why.append(f"{chain['writer']} (PCR {chain['pcr']})")
@@ -1337,6 +1367,8 @@ def _build_dashboard_inner():
             # conf 4 was so strict that only one index ever reached the trade log.
             # 3 lets BANKNIFTY / FINNIFTY calls be logged and tracked too.
             if trade and conf >= 3 and 555 <= (_ist_now().hour * 60 + _ist_now().minute) <= 915:
+                _opt_lo[trade["symbol"]] = trade["entry"]
+                _opt_hi[trade["symbol"]] = trade["entry"]
                 IND.log_signal(trade["symbol"], "BUY", trade["entry"], trade["sl"],
                                trade["t1"], trade["t2"], trade["t3"],
                                score, f"{name} {side} · {', '.join(why[:3])}", "INDEX")
@@ -1412,7 +1444,13 @@ def _build_dashboard_inner():
                     # so every stock option call sat on +0% RUNNING forever.
                     # _refresh_stock_opts() below keeps it live instead.
                     _opt_px[opt["symbol"]] = opt["entry"]
-                    IND.log_signal(opt["symbol"], "BUY", opt["entry"], opt["sl"],
+                    # The day low/high of a premium belongs to the whole session.
+                # Feeding it to a call created just now marked SL HIT in the
+                # same minute the call was given (-69% instantly). Restart the
+                # extremes from the entry so only movement AFTER entry counts.
+                _opt_lo[opt["symbol"]] = opt["entry"]
+                _opt_hi[opt["symbol"]] = opt["entry"]
+                IND.log_signal(opt["symbol"], "BUY", opt["entry"], opt["sl"],
                                    opt["t1"], opt["t2"], opt["t3"], best["score"],
                                    f"{best['symbol']} {best['side']} · {opt['why']}",
                                    "OPTION")
