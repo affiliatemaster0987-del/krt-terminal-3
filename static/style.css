@@ -589,3 +589,15 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .tq-pre{ background:rgba(255,216,61,.12); color:#ffd83d;
   border:1px solid rgba(255,216,61,.3); }
 .str-row{ flex-wrap:wrap; row-gap:5px; }
+
+/* ═══════════ MOOD STRENGTH (added) ═══════════ */
+.mood-hl.str-3{ font-weight:900; letter-spacing:.06em;
+  animation:moodPulse 1.4s ease-in-out infinite; }
+.mood-hl.str-2{ font-weight:800; }
+.mood-hl.str-1{ opacity:.9; }
+.mood-hl.str-0{ opacity:.7; font-weight:600; }
+@keyframes moodPulse{ 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.55)} }
+.mood-why{ font-size:.58rem; letter-spacing:.05em; color:var(--dim);
+  margin-left:6px; white-space:nowrap; }
+.mood-hl.hl-pe.str-3{ box-shadow:0 0 14px rgba(255,77,94,.55); }
+.mood-hl.hl-ce.str-3{ box-shadow:0 0 14px rgba(22,214,122,.5); }
