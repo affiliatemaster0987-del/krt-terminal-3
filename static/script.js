@@ -34,11 +34,18 @@ const TONES = {
   sell:   {seq:[[640,.10],[380,.16]],          gain:.09},
   target: {seq:[[660,.07],[880,.07],[1180,.16]],gain:.11},
   stop:   {seq:[[260,.14],[200,.20]],          gain:.10},
-  crash:  {seq:[[880,.12],[500,.12],[880,.12],[500,.20]], gain:.13},
+  // CRASH: a two-tone emergency siren, four full sweeps, loud and square.
+  // It must not be mistakable for any other alert on the page.
+  crash:  {seq:[[980,.18],[620,.18],[980,.18],[620,.18],
+                [980,.18],[620,.18],[980,.22],[620,.30]], gain:.20, wave:'sawtooth'},
+  // HAPPY / risk-on: a bright rising major arpeggio, clearly "good news".
+  happy:  {seq:[[523,.09],[659,.09],[784,.09],[1047,.22]], gain:.10, wave:'sine'},
+  // FEAR / risk-off: the mirror of it, falling and dull.
+  fear:   {seq:[[494,.11],[392,.11],[311,.24]],            gain:.12, wave:'triangle'},
 };
 function tone(f, dur, gain, at){
   const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-  o.type = gain>.1 ? 'square' : 'sine';
+  o.type = (tone._wave) || (gain>.1 ? 'square' : 'sine');
   o.frequency.setValueAtTime(f, at);
   g.gain.setValueAtTime(0.0001, at);
   g.gain.exponentialRampToValueAtTime(gain, at+0.012);
@@ -51,7 +58,9 @@ function beep(kind){
   if(kind===true) kind='sell';            // old call style
   const t = TONES[kind] || TONES.buy;
   let at = audioCtx.currentTime;
+  tone._wave = t.wave || null;
   t.seq.forEach(([f,d])=>{ tone(f,d,t.gain,at); at += d*0.85; });
+  tone._wave = null;
 }
 
 /* ---------- countdown ---------- */
@@ -360,6 +369,7 @@ $('conflSend') && ($('conflSend').onclick=()=>{
     `${c.symbol} ${c.side} · ${c.grade} ${c.label} · ${c.setup}\nE ${c.entry} · SL ${c.sl} · T1 ${c.t1}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+
 /* ---------- corporate filings + results diary ---------- */
 const ANNCLS={'ORDER WIN':'up','APPROVAL':'up','EXPANSION':'up','CASH':'up',
   'FAVOURABLE ORDER':'up','ORDER LOSS':'dn','REGULATORY':'dn','STRESS':'dn',
@@ -420,7 +430,18 @@ function orRows(list, el, tag, label){
 }
 
 /* ---------- market mood ---------- */
+let _lastMoodKey = null;
+function moodSound(m){
+  if(!m) return;
+  const key = (m.mood||'') + '|' + (m.favour||'');
+  if(_lastMoodKey === null){ _lastMoodKey = key; return; }   // no sound on load
+  if(key === _lastMoodKey) return;
+  _lastMoodKey = key;
+  const bad = /FEAR|WEAK|CRASH/i.test(m.mood||'');
+  beep(bad ? 'fear' : 'happy');
+}
 function renderMood(m){
+  moodSound(m);
   if(!m||!$('moodPill'))return;
   $('moodPill').className='mood-pill mood-'+m.mood;
   const P={HAPPY:['Buy breakouts: ALLOWED','Sell calls: LOW PRIORITY','Jackpot buy: ENABLED'],
@@ -430,7 +451,8 @@ function renderMood(m){
     CONFUSED:['Jackpot calls: LIMITED','Breakout trading: WAIT','Aggressive trading: AVOID'],
     MIXED:['Stock-specific only','Follow strong sectors','Normal size']}[m.mood]||[];
   $('moodPill').innerHTML=`<span class="em">${m.emoji}</span> MARKET MOOD: ${m.mood}
-     ${m.headline?`<span class="mood-hl ${m.focus==='PE'?'hl-pe':'hl-ce'}">${m.headline}</span>`:''}
+     ${m.headline?`<span class="mood-hl ${m.focus==='PE'?'hl-pe':'hl-ce'} str-${m.strength||0}">${'●'.repeat(m.strength||0)}${m.strength?' ':''}${m.headline}</span>`:''}
+     ${m.why?`<span class="mood-why">${m.why}</span>`:''}
      <span class="nt2">· breadth ${m.breadth}% · ${m.note}</span>`;
   if($('moodRules')) $('moodRules').innerHTML=P.map(x=>`<span class="rule">${x}</span>`).join('');
 }
@@ -690,6 +712,7 @@ $('idxSend') && ($('idxSend').onclick=()=>{
     `${x.index}: ${x.side||'WAIT'} ${x.score}/100 · spot ${x.spot} (${x.chg>=0?'+':''}${x.chg}%)${x.strikes&&x.strikes.length?` · ${x.opt} ${x.strikes[0].strike} ${x.strikes[0].type}`:''}\n   ${x.verdict}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+
 /* ---------- session + index bias ---------- */
 function renderSession(sess, ib){
   if(sess && $('sessPill')){
