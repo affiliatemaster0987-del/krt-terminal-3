@@ -18,7 +18,11 @@ _cache = {}          # sym -> {"ts":, "data":}
 CACHE_SEC = 420          # 7 min — chain moves slowly, saves API load      # option chain 3 min-ku oru dhadava podhum
 _master = {"rows": [], "ts": 0, "loading": False}
 # Index option chains mattum thevai — stock options thevai illa (RAM saving)
-IDX_NAMES = ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50")
+# SENSEX and BANKEX are BSE contracts (exch_seg BFO, not NFO) — they were
+# never kept, so their chains and max pain could not appear.
+IDX_NAMES = ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50",
+             "SENSEX", "BANKEX")
+BSE_UNDERLYINGS = {"SENSEX", "BANKEX"}
 # Stock option chains are needed too, so the terminal can name an actual
 # strike for a stock call. Widened at startup via set_universe().
 WANT_NAMES = set(IDX_NAMES)
@@ -178,17 +182,19 @@ def _load_master(blocking=False):
                             if depth == 0 and start is not None:
                                 try:
                                     x = json.loads(buf[start:i + 1])
-                                    if (x.get("exch_seg") == "NFO"
-                                            and x.get("instrumenttype") in ("OPTSTK", "OPTIDX")
+                                    if (x.get("exch_seg") in ("NFO", "BFO")
+                                            and x.get("instrumenttype") in ("OPTSTK", "OPTIDX", "OPTIDX")
                                             and (want is None or x.get("name") in want)
                                             and _expiry_ok(x.get("expiry"))
                                             and len(opts) < MAX_CONTRACTS):
                                         tk = x.get("token")
                                         if tk not in seen:
                                             seen.add(tk)
-                                            opts.append({k: x.get(k) for k in
-                                                         ("token", "symbol", "name", "expiry",
-                                                          "strike", "instrumenttype")})
+                                            r = {k: x.get(k) for k in
+                                                 ("token", "symbol", "name", "expiry",
+                                                  "strike", "instrumenttype")}
+                                            r["seg"] = x.get("exch_seg")
+                                            opts.append(r)
                                             kept += 1
                                 except Exception:
                                     pass
@@ -283,7 +289,8 @@ def get_chain(sym, spot, sc=None):
         fetched = []
         for grp in _chunks(tokens, 50):
             try:
-                resp = sc.getMarketData("FULL", {"NFO": grp})
+                seg = "BFO" if sym in BSE_UNDERLYINGS else "NFO"
+                resp = sc.getMarketData("FULL", {seg: grp})
                 fetched += (resp.get("data", {}).get("fetched", []) if resp else [])
             except Exception as e:
                 print("[optchain] md error:", e)
