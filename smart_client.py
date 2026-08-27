@@ -15,19 +15,30 @@ import option_chain as OC
 import confluence as CONF
 import corporate as CORP
 import optionpick as OPT
+import zerohero as ZH
 import store as _ST
 from datetime import datetime, timedelta
 
 # ───────────────────────── INDICES (fixed tokens) ─────────────────────────
 INDICES = {
-    "NIFTY 50":  "99926000",
-    "BANKNIFTY": "99926009",
-    "INDIA VIX": "99926017",
-    "FINNIFTY":  "99926037",
+    "NIFTY 50":   "99926000",
+    "BANKNIFTY":  "99926009",
+    "INDIA VIX":  "99926017",
+    "FINNIFTY":   "99926037",
+    "MIDCPNIFTY": "99926074",
+    # BSE indices sit on the BSE segment, so they are fetched separately.
+    "SENSEX":     "99919000",
+    "BANKEX":     "99919012",
 }
+# BSE index tokens must be requested with exchange "BSE", not "NSE".
+BSE_INDICES = {"SENSEX", "BANKEX"}
+
 # Angel option-chain name for each index
-IDX_OPT_NAME = {"NIFTY 50": "NIFTY", "BANKNIFTY": "BANKNIFTY", "FINNIFTY": "FINNIFTY"}
-IDX_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50}
+IDX_OPT_NAME = {"NIFTY 50": "NIFTY", "BANKNIFTY": "BANKNIFTY",
+                "FINNIFTY": "FINNIFTY", "MIDCPNIFTY": "MIDCPNIFTY",
+                "SENSEX": "SENSEX", "BANKEX": "BANKEX"}
+IDX_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50,
+            "MIDCPNIFTY": 25, "SENSEX": 100, "BANKEX": 100}
 
 # ───────────────────────── F&O UNIVERSE + SECTORS ─────────────────────────
 # symbol : sector   (Angel tokens auto-resolve, nothing hardcoded)
@@ -316,15 +327,21 @@ def _fetch_live():
     sc = _login()
     tmap = _tok_map()
     rev = {v: k for k, v in tmap.items()}
-    tokens = list(tmap.values())
+    # SENSEX and BANKEX live on the BSE segment. Asking for them under "NSE"
+    # returns nothing, which is why they were missing from the strip.
+    bse_toks = {tmap[k] for k in BSE_INDICES if k in tmap}
+    nse_tokens = [t for t in tmap.values() if t not in bse_toks]
     fetched = []
-    for grp in _chunks(tokens, 50):        # Angel limit: 50 tokens / request
-        try:
-            resp = sc.getMarketData("FULL", {"NSE": grp})
-            fetched += (resp.get("data", {}).get("fetched", []) if resp else [])
-        except Exception as e:
-            print("market data chunk error:", e)
-        time.sleep(0.25)
+    for seg, toks in (("NSE", nse_tokens), ("BSE", sorted(bse_toks))):
+        if not toks:
+            continue
+        for grp in _chunks(toks, 50):      # Angel limit: 50 tokens / request
+            try:
+                resp = sc.getMarketData("FULL", {seg: grp})
+                fetched += (resp.get("data", {}).get("fetched", []) if resp else [])
+            except Exception as e:
+                print(f"market data chunk error ({seg}):", e)
+            time.sleep(0.25)
     out = []
     for row in fetched:
         name = rev.get(str(row.get("symbolToken")))
@@ -1386,6 +1403,30 @@ def _build_dashboard_inner():
                             f"{'Bullish' if side=='CE' else 'Bearish'} setup — trade {side} on dips"),
             })
         index_setups.sort(key=lambda x: -x["score"])
+
+        # ── ZERO TO HERO (expiry-day far-OTM lottery, late session only) ──
+        try:
+            _z_chains, _z_cs, _z_exp, _z_step = {}, {}, {}, {}
+            for _ix in indices:
+                _nm = _ix["symbol"]
+                _on = IDX_OPT_NAME.get(_nm)
+                if not _on or not _ix.get("ltp"):
+                    continue
+                _ch = OC.get_chain(_on, _ix["ltp"])
+                if not _ch:
+                    continue
+                _z_chains[_nm] = _ch
+                _z_cs[_nm] = IND.CANDLES.get(_nm, [])
+                _z_step[_nm] = _ch.get("step") or IDX_STEP.get(_on)
+                try:
+                    _d = datetime.strptime(_ch.get("expiry", ""), "%d%b%Y").date()
+                    _z_exp[_nm] = (_d == _ist_now().date())
+                except Exception:
+                    _z_exp[_nm] = False
+            zero_hero = ZH.scan(indices, _z_chains, _z_cs, _z_exp, _z_step)
+        except Exception as e:
+            print("[zerohero] error:", str(e)[:120])
+            zero_hero = []
         _refresh_stock_opts(rows)
         if _opt_px:
             # Stop first, then target. Feeding the low before the high means a
@@ -1494,6 +1535,7 @@ def _build_dashboard_inner():
         "global": get_global_cues(),
         "structure": structure,
         "index_setups": index_setups,
+        "zero_hero": zero_hero,
         "session": sess,
         "index_bias": ibias,
         "zones": zones[:14],
