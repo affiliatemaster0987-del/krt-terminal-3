@@ -105,6 +105,25 @@ function dgMsg(d){
 let jackpots=[], dangers=[];
 
 /* ---------- star rating (5★ = highest conviction) ---------- */
+
+/* ---------- traffic light: how hard is this call worth taking ---------- */
+function lightOf(score, extra){
+  const v = Number(score)||0;
+  const b = extra || {};
+  // Gold is deliberately rare. It needs a high score AND the day to allow it,
+  // because a 95 score in a market told to sit out is still a bad trade.
+  if(v >= 88 && b.allowed !== false && b.late !== true)
+    return {k:'gold',  txt:'GOLD · TAKE IT'};
+  if(v >= 78 && b.allowed !== false)
+    return {k:'green', txt:'GREEN · GOOD'};
+  if(v >= 65) return {k:'amber', txt:'AMBER · HALF SIZE'};
+  return {k:'grey', txt:'GREY · WATCH ONLY'};
+}
+function lightChip(score, extra){
+  const l = lightOf(score, extra);
+  return `<span class="lite lite-${l.k}">${l.txt}</span>`;
+}
+
 function starN(score){
   const v = Number(score)||0;
   if(v>=90) return 5;
@@ -201,7 +220,7 @@ function renderJackpots(){
         <span class="sec">${j.sector}</span>
         <span class="up">₹${fmt(j.ltp)} ▲${j.chg}%</span>
         <span class="sc">${j.score}<small>/100</small></span>
-        ${stars(j.score)}<span class="star-word">${starWord(j.score)}</span>
+        ${stars(j.score)}<span class="star-word">${starWord(j.score)}</span>${lightChip(j.score)}
         <span class="opt-sug">Option: ${j.symbol} ${atmStrike(j.ltp)} CE</span></div>
       <div class="sig-tags">${j.tags.map(t=>`<span class="t-chip">✅ ${t}</span>`).join('')||'<span class="t-chip dim">Momentum</span>'}</div>
       <div class="sig-lv"><span class="e">E ${j.e}</span><span class="s">SL ${j.sl}</span>
@@ -219,7 +238,7 @@ function renderDangers(){
         <span class="sec">${d.sector}</span>
         <span class="dn">₹${fmt(d.ltp)} ▼${Math.abs(d.chg)}%</span>
         <span class="sc dnsc">${d.score}<small>/100</small></span>
-        ${stars(d.score)}<span class="star-word">${starWord(d.score)}</span>
+        ${stars(d.score)}<span class="star-word">${starWord(d.score)}</span>${lightChip(d.score)}
         <span class="opt-sug">Option: ${d.symbol} ${atmStrike(d.ltp)} PE</span></div>
       <div class="sig-tags">${d.tags.map(t=>`<span class="t-chip bad">⚠ ${t}</span>`).join('')||'<span class="t-chip dim">Weak</span>'}</div>
       <div class="sig-lv"><span class="e">E ${d.e}</span><span class="s">SL ${d.sl}</span>
@@ -369,7 +388,6 @@ $('conflSend') && ($('conflSend').onclick=()=>{
     `${c.symbol} ${c.side} · ${c.grade} ${c.label} · ${c.setup}\nE ${c.entry} · SL ${c.sl} · T1 ${c.t1}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
-
 /* ---------- corporate filings + results diary ---------- */
 const ANNCLS={'ORDER WIN':'up','APPROVAL':'up','EXPANSION':'up','CASH':'up',
   'FAVOURABLE ORDER':'up','ORDER LOSS':'dn','REGULATORY':'dn','STRESS':'dn',
@@ -529,7 +547,7 @@ function renderZones(list){
         <span class="chip ${z.side==='BUY'?'up':'dn'}">${z.side}</span>
         ${z.must?`<span class="must-tag">⭐ MUST TRY · ${z.side==='BUY'?'LOOKING BIG JACKPOT — CE':'LOOKING BIG CRASH — PE'}</span>`:''}
         <span class="z-score">${z.score}<small>/100</small></span>
-        ${stars(z.score)}<span class="star-word">${starWord(z.score)}</span>
+        ${stars(z.score)}<span class="star-word">${starWord(z.score)}</span>${lightChip(z.score,{late:z.late})}
         <span class="opt-sug">Option: ${z.symbol} ${atmStrike(z.ltp)} ${z.side==='BUY'?'CE':'PE'}</span>
       </div>
       <div class="z-band">${z.side==='BUY'?'Buy zone':'Sell zone'}
@@ -712,6 +730,48 @@ $('idxSend') && ($('idxSend').onclick=()=>{
     `${x.index}: ${x.side||'WAIT'} ${x.score}/100 · spot ${x.spot} (${x.chg>=0?'+':''}${x.chg}%)${x.strikes&&x.strikes.length?` · ${x.opt} ${x.strikes[0].strike} ${x.strikes[0].type}`:''}\n   ${x.verdict}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+/* ---------- 🚀 zero to hero (expiry-day lottery) ---------- */
+let zhData=[];
+function renderZeroHero(list){
+  zhData = list||[];
+  if(!$('zhBox')) return;
+  $('zhTag').textContent = zhData.length ? zhData.length+' LIVE' : 'NONE';
+  if(!zhData.length){
+    $('zhBox').innerHTML = `<div class="empty">No zero-to-hero setup.<br>
+      <span class="dim">These only exist on expiry day, after 1:15 pm, while the
+      index is in a fast one-way leg. Most days there is nothing here — that is
+      the honest answer, not a fault.</span></div>`;
+    return;
+  }
+  $('zhBox').innerHTML = zhData.map((z,i)=>`
+    <div class="zh-card ${z.side==='CE'?'up':'dn'}">
+      <div class="zh-top">
+        <b class="zh-sym">${z.symbol}</b>
+        <span class="zh-mult">${z.mult}x potential</span>
+        <span class="sc">${z.score}<small>/100</small></span>
+        ${stars(z.score)}<span class="star-word">${starWord(z.score)}</span>
+        <span class="tq tq-best">⏱ ${z.at} · ${z.left}m left</span>
+      </div>
+      <div class="zh-lv">
+        <span class="e">ENTRY ₹${z.entry}</span>
+        <span class="t">TARGET ₹${z.target}</span>
+        <span class="s">SL ₹${z.sl}</span>
+      </div>
+      <div class="zh-why">${z.why}</div>
+      <div class="zh-risk">⚠ ${z.risk}</div>
+      <button class="btn wa" onclick="waZH(${i})">🟢 WA</button>
+    </div>`).join('');
+}
+function waZH(i){
+  const z=zhData[i]; if(!z) return;
+  openWA(`🚀 ZERO TO HERO\n${z.symbol}\nEntry ₹${z.entry} · Target ₹${z.target} (${z.mult}x) · SL ₹${z.sl}\n${z.why}\n\n⚠ ${z.risk}`);
+}
+$('zhSend') && ($('zhSend').onclick=()=>{
+  if(!zhData.length) return openWA('No zero-to-hero setup right now.');
+  openWA('🚀 ZERO TO HERO\n\n'+zhData.map(z=>
+    `${z.symbol} · ₹${z.entry} → ₹${z.target} (${z.mult}x) · SL ₹${z.sl}`).join('\n')
+    +'\n\n⚠ Expiry lottery — assume total loss.');
+});
 
 /* ---------- session + index bias ---------- */
 function renderSession(sess, ib){
@@ -741,7 +801,7 @@ function renderCOD(c){
       <span class="chip ${c.side==='BUY'?'up':'dn'}">${c.side}</span>
       <span class="cod-view">${c.view}</span>
       <span class="cod-score">${c.score}<small>/100</small></span>
-      ${stars(c.score)}<span class="star-word">${starWord(c.score)}</span>
+      ${stars(c.score)}<span class="star-word">${starWord(c.score)}</span>${lightChip(c.score,{late:c.late})}
     </div>
     <div class="cod-grid">
       <div class="cod-cell"><div class="k">${c.side==='BUY'?'BUY ZONE':'SELL ZONE'}</div>
@@ -988,6 +1048,7 @@ async function refresh(){
     safe(renderOptions,'renderOptions',uniq, rank, sectors.length);
     safe(renderSession,'renderSession',d.session, d.index_bias);
     safe(renderIdxSetups,'renderIdxSetups',d.index_setups);
+    safe(renderZeroHero,'renderZeroHero',d.zero_hero);
     safe(renderStructure,'renderStructure',d.structure);
     safe(renderTradeLog,'renderTradeLog',d.tracker);
     (d.structure||[]).forEach(x=>{
@@ -1023,3 +1084,7 @@ async function refreshNews(){
 refresh(); refreshNews();
 setInterval(refresh, CONFIG.REFRESH_MS);
 setInterval(refreshNews, 90000);          // news every 90s — much lighter
+
+
+
+
