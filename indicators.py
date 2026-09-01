@@ -348,8 +348,12 @@ COOLDOWN_MIN = 15
 # file, so whichever worker saved last wiped the calls the other worker had
 # logged — the trade log kept dropping from 8 calls back to 1. Every read
 # and write now merges against what is already on disk.
-_ADVANCE = {"LIVE": 0, "T1 HIT": 1, "T2 HIT": 2, "T3 HIT": 3,
-            "SL HIT": 3, "CLOSED": 3}
+# Every status the tracker can actually write must appear here. "TARGET
+# COMPLETED" and "EXPIRED" were missing, so the merge scored them 0 and let a
+# stale worker downgrade a finished call back to T2 HIT.
+_ADVANCE = {"WAITING": 0, "TRIGGERED": 0, "LIVE": 0, "RUNNING": 0,
+            "T1 HIT": 1, "T2 HIT": 2, "T3 HIT": 3,
+            "TARGET COMPLETED": 4, "SL HIT": 4, "EXPIRED": 4, "CLOSED": 4}
 
 
 def _disk_read():
@@ -440,7 +444,13 @@ def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="", sour
            "score": score, "setup": setup, "source": source,
            "ts": _ist().strftime("%H:%M"), "date": today,
            "status": "LIVE", "t1_at": None, "t2_at": None, "t3_at": None,
-           "sl_at": None, "done_at": None, "best": entry, "pnl_pct": None}
+           "sl_at": None, "done_at": None, "best": entry, "pnl_pct": None,
+           # Full lifecycle with a timestamp on every state change, so a call
+           # can never sit on RUNNING with no explanation of what happened.
+           "trail": [{"state": "TRIGGERED", "at": _ist().strftime("%H:%M:%S"),
+                      "px": entry}],
+           "triggered_at": _ist().strftime("%H:%M:%S"),
+           "closed_at": None, "exit_px": None, "exit_reason": None}
     _signals.append(sig); _save()
     return sig
 
@@ -487,18 +497,39 @@ def update_tracker(price_map):
         s["pnl_pct"] = round(((px - s["entry"]) if buy else (s["entry"] - px)) / s["entry"] * 100, 2)
         hit = lambda lvl: (px >= lvl) if buy else (px <= lvl)
         stop = (px <= s["sl"]) if buy else (px >= s["sl"])
+        # Every state change is stamped, so a call can never sit on RUNNING
+        # with no record of what happened to it.
+        def _mark(state, extra=None):
+            s.setdefault("trail", []).append(
+                {"state": state, "at": now, "px": round(px, 2)})
+            if extra:
+                s.update(extra)
+
         if stop:
-            s.update(status="SL HIT", sl_at=now, done_at=now); changed.append(s); continue
+            _mark("SL HIT", {"status": "SL HIT", "sl_at": now, "done_at": now,
+                             "closed_at": now, "exit_px": round(px, 2),
+                             "exit_reason": "Stop loss"})
+            changed.append(s); continue
         if s["t1"] and not s["t1_at"] and hit(s["t1"]):
-            s.update(t1_at=now, status="T1 HIT"); changed.append(s)
+            _mark("T1 HIT", {"t1_at": now, "status": "T1 HIT"}); changed.append(s)
         if s["t2"] and not s["t2_at"] and hit(s["t2"]):
-            s.update(t2_at=now, status="T2 HIT"); changed.append(s)
+            _mark("T2 HIT", {"t2_at": now, "status": "T2 HIT"}); changed.append(s)
         if s["t3"] and not s["t3_at"] and hit(s["t3"]):
-            s.update(t3_at=now, status="TARGET COMPLETED", done_at=now); changed.append(s)
-        # market close -> expire
+            _mark("CLOSED", {"t3_at": now, "status": "TARGET COMPLETED",
+                             "done_at": now, "closed_at": now,
+                             "exit_px": round(px, 2),
+                             "exit_reason": "All targets hit"})
+            changed.append(s)
+        # 3:15 — square off anything still open rather than leaving it RUNNING
         n = _ist()
-        if n.hour >= 15 and n.minute >= 30 and s["status"] in ("LIVE", "T1 HIT", "T2 HIT"):
-            s.update(status="EXPIRED" if s["status"] == "LIVE" else s["status"], done_at=now)
+        mins_now = n.hour * 60 + n.minute
+        if mins_now >= 915 and s["status"] in ("LIVE", "T1 HIT", "T2 HIT"):
+            _mark("CLOSED", {"status": ("EXPIRED" if s["status"] == "LIVE"
+                                        else s["status"]),
+                             "done_at": now, "closed_at": now,
+                             "exit_px": round(px, 2),
+                             "exit_reason": "Squared off at 3:15"})
+            changed.append(s)
     if changed:
         _save()
     return changed
