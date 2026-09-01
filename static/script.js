@@ -124,6 +124,61 @@ function lightChip(score, extra){
   return `<span class="lite lite-${l.k}">${l.txt}</span>`;
 }
 
+
+/* ---------- option contract block, shared by every card ---------- */
+function optBlock(o){
+  if(!o) return `<div class="opt-none">No tradable strike — chain thin or
+    every contract failed the liquidity test. Nothing named on purpose.</div>`;
+  const b = o.badge==='GOLD' ? `<span class="lite lite-gold">🏆 GOLD</span>`
+          : o.badge==='MUST TRY' ? `<span class="lite lite-green">🔥 MUST TRY</span>` : '';
+  return `<div class="optblk">
+    <div class="ob-head"><b>${o.symbol}</b>
+      <span class="ob-mny">${o.moneyness}</span>
+      <span class="ob-exp">exp ${o.expiry}${o.days_to_expiry!=null?` · ${o.days_to_expiry}d`:''}</span>
+      <span class="ob-liq liq-${(o.liquidity||'').toLowerCase()}">${o.liquidity}</span>${b}</div>
+    <div class="ob-lv">
+      <span class="e">LTP ₹${o.ltp}</span>
+      <span class="s">SL ₹${o.sl}${o.sl_pct!=null?` <i>${o.sl_pct}%</i>`:''}</span>
+      <span class="t">T1 ₹${o.t1}${o.t1_pct!=null?` <i>+${o.t1_pct}%</i>`:''}</span>
+      <span class="t">T2 ₹${o.t2}${o.t2_pct!=null?` <i>+${o.t2_pct}%</i>`:''}</span>
+      ${o.t3?`<span class="t">T3 ₹${o.t3}${o.t3_pct!=null?` <i>+${o.t3_pct}%</i>`:''}</span>`:''}
+      ${o.rr?`<span class="rr">R:R 1:${o.rr}</span>`:''}
+    </div>
+    <div class="ob-data">
+      <span>OI ${fmtK(o.oi)}</span>
+      <span class="${o.chg_oi>=0?'up':'dn'}">ΔOI ${o.chg_oi>=0?'+':''}${fmtK(o.chg_oi)}${o.chg_oi_pct!=null?` (${o.chg_oi_pct}%)`:''}</span>
+      <span>Vol ${fmtK(o.volume)}</span>
+      ${o.iv?`<span>IV ${o.iv}%</span>`:''}
+      <span>Δ ${o.delta}</span>
+      ${o.pcr?`<span>PCR ${o.pcr}</span>`:''}
+      ${o.max_pain?`<span>MaxPain ${o.max_pain}</span>`:''}
+      ${o.support?`<span>Sup ${o.support}</span>`:''}
+      ${o.resistance?`<span>Res ${o.resistance}</span>`:''}
+    </div>
+    <div class="ob-prob">
+      <span class="p-up">UP ${o.up_prob}%</span>
+      <span class="p-dn">DOWN ${o.down_prob}%</span>
+      <span class="p-pr">PREMIUM RISE ${o.premium_rise_prob}%</span>
+      <span class="p-cf">CONFIDENCE ${o.confidence}/100</span>
+    </div>
+    <div class="ob-why">${o.why} · ${o.at}</div>
+  </div>`;
+}
+function fmtK(n){
+  n = Number(n)||0; const a=Math.abs(n);
+  if(a>=10000000) return (n/10000000).toFixed(2)+'Cr';
+  if(a>=100000)   return (n/100000).toFixed(2)+'L';
+  if(a>=1000)     return (n/1000).toFixed(1)+'K';
+  return String(n);
+}
+/* ---------- lifecycle trail ---------- */
+function trailBlock(t){
+  if(!t || !t.length) return '';
+  return `<div class="trail">${t.map(x=>
+    `<span class="tr-step tr-${(x.state||'').split(' ')[0].toLowerCase()}">${x.at} ${x.state}</span>`
+  ).join('<span class="tr-arrow">→</span>')}</div>`;
+}
+
 function starN(score){
   const v = Number(score)||0;
   if(v>=90) return 5;
@@ -227,6 +282,7 @@ function renderJackpots(){
         <span class="t">T1 ${j.t1}</span><span class="t">T2 ${j.t2}</span><span class="t">T3 ${j.t3}</span></div>
       <div class="sig-foot"><span>Vol ${volFmt(j.volume)} · H ${fmt(j.high)} / L ${fmt(j.low)}${j.atrMode?' · <b class="atrb">ATR levels</b>':' · fixed % levels'}</span>
         <button class="btn wa mini" onclick="waJP(${i})">🟢 WA</button></div>
+      ${optBlock(x.option)}
     </div>`).join('');
 }
 function renderDangers(){
@@ -548,7 +604,7 @@ function renderZones(list){
         ${z.must?`<span class="must-tag">⭐ MUST TRY · ${z.side==='BUY'?'LOOKING BIG JACKPOT — CE':'LOOKING BIG CRASH — PE'}</span>`:''}
         <span class="z-score">${z.score}<small>/100</small></span>
         ${stars(z.score)}<span class="star-word">${starWord(z.score)}</span>${lightChip(z.score,{late:z.late})}
-        <span class="opt-sug">Option: ${z.symbol} ${atmStrike(z.ltp)} ${z.side==='BUY'?'CE':'PE'}</span>
+        ${z.option?'':`<span class="opt-sug">Option: ${z.symbol} ${atmStrike(z.ltp)} ${z.side==='BUY'?'CE':'PE'}</span>`}
       </div>
       <div class="z-band">${z.side==='BUY'?'Buy zone':'Sell zone'}
         <b>${fmt(z.zone_lo)} – ${fmt(z.zone_hi)}</b>
@@ -557,12 +613,13 @@ function renderZones(list){
         <span class="t">T1 ${z.t1}<i>${z.t1_pct!=null?'+'+z.t1_pct+'%':''}</i></span>
         <span class="t">T2 ${z.t2}<i>${z.t2_pct!=null?'+'+z.t2_pct+'%':''}</i></span>
         <span class="t">T3 ${z.t3}<i>${z.t3_pct!=null?'+'+z.t3_pct+'%':''}</i></span></div>
+      ${optBlock(z.option)}
       <div class="z-foot"><span>${z.note} · ${z.why}</span>
         <button class="btn wa mini" onclick="waZone(${i})">🟢 WA</button></div>
     </div>`).join('') : `<div class="empty">No clean zones right now — zones appear when trend, sector and VWAP line up</div>`;
 }
 function zMsg(z){
-  return `${z.side==='BUY'?'🎯 KRT BUY ZONE':'🎯 KRT SELL ZONE'}${z.must?(z.side==='BUY'?' ⭐ MUST TRY · LOOKING BIG JACKPOT — CE':' ⭐ MUST TRY · LOOKING BIG CRASH — PE'):''}\n\n${z.symbol} (${z.sector})\nLTP ₹${fmt(z.ltp)} (${z.chg>=0?'+':''}${z.chg}%)\n\n${z.side==='BUY'?'Buy zone':'Sell zone'}: ${z.zone_lo} – ${z.zone_hi}\nSL: ${z.sl}\nT1: ${z.t1}\nT2: ${z.t2}\nT3: ${z.t3}\n\nScore: ${z.score}/100\nWhy: ${z.why}\n${z.note}\n\n⚠ Educational only. Not investment advice.`;
+  return `${z.side==='BUY'?'🎯 KRT BUY ZONE':'🎯 KRT SELL ZONE'}${z.must?(z.side==='BUY'?' ⭐ MUST TRY · LOOKING BIG JACKPOT — CE':' ⭐ MUST TRY · LOOKING BIG CRASH — PE'):''}\n\n${z.symbol} (${z.sector})\nLTP ₹${fmt(z.ltp)} (${z.chg>=0?'+':''}${z.chg}%)\n\n${z.side==='BUY'?'Buy zone':'Sell zone'}: ${z.zone_lo} – ${z.zone_hi}\nSL: ${z.sl}\nT1: ${z.t1}\nT2: ${z.t2}\nT3: ${z.t3}\n${z.option?`\n\n📄 ${z.option.symbol}\nLTP ₹${z.option.ltp} · SL ₹${z.option.sl} · T1 ₹${z.option.t1} · T2 ₹${z.option.t2}\nOI ${z.option.oi} · ΔOI ${z.option.chg_oi} · IV ${z.option.iv||'-'}%\nPremium rise probability: ${z.option.premium_rise_prob}%\nConfidence: ${z.option.confidence}/100`:''}\n\nScore: ${z.score}/100\nWhy: ${z.why}\n${z.note}\n\n⚠ Educational only. Not investment advice.`;
 }
 function waZone(i){ if(zoneData[i]) openWA(zMsg(zoneData[i])); }
 $('zoneSend') && ($('zoneSend').onclick=()=>{
