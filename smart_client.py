@@ -16,6 +16,7 @@ import confluence as CONF
 import corporate as CORP
 import optionpick as OPT
 import zerohero as ZH
+import optengine as OE
 import store as _ST
 from datetime import datetime, timedelta
 
@@ -885,6 +886,53 @@ def _refresh_stock_opts(rows):
         print("[optpx] stock refresh error:", str(e)[:110])
 
 
+
+def _attach_options(rows, stocks, level_key="ltp", limit=10):
+    """Give every card the actual contract to trade, not a rounded strike.
+
+    Each row gets: strike, live premium, SL and targets in premium terms, OI,
+    change in OI, volume, IV, delta, liquidity, both probabilities and a
+    confidence score. Rows we cannot price keep a plain `option: None` so the
+    card can say so honestly rather than invent a contract.
+    """
+    if not rows:
+        return rows
+    ind_of = {r["symbol"]: (r.get("ind") or {}) for r in (stocks or [])}
+    done = 0
+    for r in rows:
+        r["option"] = None
+        if done >= limit:
+            continue
+        sym = r.get("symbol")
+        px = r.get(level_key) or r.get("ltp")
+        side = r.get("side") or ("BUY" if r.get("dir") == "up" else "SELL")
+        if not sym or not px:
+            continue
+        try:
+            ch = OC.get_chain(sym, px)
+            if not ch:
+                continue
+            sig = {"symbol": sym, "side": side, "ltp": px,
+                   "entry": r.get("entry") or px,
+                   "sl": r.get("sl"), "t1": r.get("t1"),
+                   "t2": r.get("t2"), "t3": r.get("t3"),
+                   "score": r.get("score") or r.get("conf") or 65}
+            if not sig["sl"] or not sig["t1"]:
+                atr = max(px * 0.006, 0.05)
+                sgn = 1 if side == "BUY" else -1
+                sig["sl"] = round(px - sgn * 1.2 * atr, 2)
+                sig["t1"] = round(px + sgn * 1.5 * atr, 2)
+                sig["t2"] = round(px + sgn * 2.5 * atr, 2)
+                sig["t3"] = round(px + sgn * 4.0 * atr, 2)
+            o = OE.enrich(sig, ch, ind_of.get(sym, {}))
+            if o:
+                r["option"] = o
+                done += 1
+        except Exception as e:
+            print("[optengine] attach failed", sym, str(e)[:80])
+    return rows
+
+
 def _build_dashboard_inner():
     rows, mode = get_quotes()
     indices = [r for r in rows if r["symbol"] in INDICES]
@@ -1477,22 +1525,20 @@ def _build_dashboard_inner():
             zmid = (best.get("zone_lo", px) + best.get("zone_hi", px)) / 2
             opt = None
             try:
-                opt = OPT.pick(chain, px, "CE" if best["side"] == "BUY" else "PE",
-                               best.get("sl"), best.get("t1"), best.get("t2"),
-                               best.get("t3"), entry_spot=zmid)
+                # The full option decision, not just a rounded strike: OI,
+                # change in OI, volume, IV, delta, liquidity and the two
+                # probabilities all come back together.
+                opt = OE.enrich({**best, "entry": zmid}, chain,
+                                (best.get("ind") or {}))
                 if opt:
-                    # setdefault wrote the entry premium once and never again,
-                    # so every stock option call sat on +0% RUNNING forever.
-                    # _refresh_stock_opts() below keeps it live instead.
                     _opt_px[opt["symbol"]] = opt["entry"]
-                    # The day low/high of a premium belongs to the whole session.
-                # Feeding it to a call created just now marked SL HIT in the
-                # same minute the call was given (-69% instantly). Restart the
-                # extremes from the entry so only movement AFTER entry counts.
-                _opt_lo[opt["symbol"]] = opt["entry"]
-                _opt_hi[opt["symbol"]] = opt["entry"]
-                IND.log_signal(opt["symbol"], "BUY", opt["entry"], opt["sl"],
-                                   opt["t1"], opt["t2"], opt["t3"], best["score"],
+                    # Extremes start at entry so a session low cannot mark a
+                    # stop on a call created seconds ago.
+                    _opt_lo[opt["symbol"]] = opt["entry"]
+                    _opt_hi[opt["symbol"]] = opt["entry"]
+                    IND.log_signal(opt["symbol"], "BUY", opt["entry"], opt["sl"],
+                                   opt["t1"], opt["t2"], opt["t3"],
+                                   opt["confidence"],
                                    f"{best['symbol']} {best['side']} · {opt['why']}",
                                    "OPTION")
             except Exception as e:
@@ -1533,12 +1579,12 @@ def _build_dashboard_inner():
                              crash=len((_nsig or {}).get("market_crash") or []),
                              news_neg=len((_nsig or {}).get("danger") or [])),
         "global": get_global_cues(),
-        "structure": structure,
+        "structure": _attach_options(structure, stocks, level_key="px"),
         "index_setups": index_setups,
         "zero_hero": zero_hero,
         "session": sess,
         "index_bias": ibias,
-        "zones": zones[:14],
+        "zones": _attach_options(zones[:14], stocks),
         "call_day": call_day,
         "tracker": IND.stats(),
         "ind_ready": sum(1 for r in stocks if (r.get("ind") or {}).get("ready")),
