@@ -455,6 +455,13 @@ def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="", sour
     return sig
 
 
+def recent_signals(n=60):
+    """Today's signals whatever their state — the card needs closed ones too."""
+    _sync()
+    today = _ist().strftime("%Y-%m-%d")
+    return [s for s in _signals if s.get("date") == today][-n:]
+
+
 def open_signals():
     """Calls that are still live, so their price is worth refreshing."""
     _sync()
