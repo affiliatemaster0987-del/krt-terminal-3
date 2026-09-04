@@ -15,7 +15,7 @@ import option_chain as OC
 import confluence as CONF
 import corporate as CORP
 import optionpick as OPT
-import zerohero as ZH
+import institutional as INST
 import optengine as OE
 import store as _ST
 from datetime import datetime, timedelta
@@ -126,6 +126,8 @@ _opt_px = {}
 # recovers between two polls, the hit is missed and the call sits on RUNNING
 # forever. Track the low/high seen so the tracker can judge honestly.
 _opt_lo, _opt_hi = {}, {}
+_inst_live = []          # today's signals, in the order they fired
+_inst_seen = {}          # {"BHEL|pdh": "10:21"} — first detection time
 _struct_seen = {}          # {"BHEL|BREAKOUT": "13:28"} — alert first-seen time
 _preopen = {"day": "", "rows": [], "final": False}
 _diag = {"source": "angel", "tokens": 0, "pdh_ok": 0, "orh_ok": 0, "last_error": "", "sample_error": "",
@@ -1245,6 +1247,9 @@ def _build_dashboard_inner():
     structure = []
     try:
         _now_hm = _ist_now().strftime("%H:%M")
+        # Alerts were being stamped before 9:15 on pre-open prints, which is
+        # how an 08:21 "breakout" reached the list. Nothing is tradable then.
+        _mkt_open = INST.market_open_now()
         for r in stocks:
             ind = r.get("ind") or {}
             px = r.get("ltp") or 0
@@ -1305,6 +1310,10 @@ def _build_dashboard_inner():
                 })
         structure.sort(key=lambda x: (not x.get("news"), not x["big"],
                                       -abs(x["chg"])))
+        if not _mkt_open:
+            structure = []
+        for _a in structure:
+            _a["at12"] = INST.to12(_a.get("at") or _now_hm)
         structure = structure[:15]
     except Exception as e:
         print("structure error:", e)
@@ -1452,29 +1461,21 @@ def _build_dashboard_inner():
             })
         index_setups.sort(key=lambda x: -x["score"])
 
-        # ── ZERO TO HERO (expiry-day far-OTM lottery, late session only) ──
+        # ── INSTITUTIONAL ENTRY (F&O level breaks with real volume) ──
         try:
-            _z_chains, _z_cs, _z_exp, _z_step = {}, {}, {}, {}
-            for _ix in indices:
-                _nm = _ix["symbol"]
-                _on = IDX_OPT_NAME.get(_nm)
-                if not _on or not _ix.get("ltp"):
-                    continue
-                _ch = OC.get_chain(_on, _ix["ltp"])
-                if not _ch:
-                    continue
-                _z_chains[_nm] = _ch
-                _z_cs[_nm] = IND.CANDLES.get(_nm, [])
-                _z_step[_nm] = _ch.get("step") or IDX_STEP.get(_on)
-                try:
-                    _d = datetime.strptime(_ch.get("expiry", ""), "%d%b%Y").date()
-                    _z_exp[_nm] = (_d == _ist_now().date())
-                except Exception:
-                    _z_exp[_nm] = False
-            zero_hero = ZH.scan(indices, _z_chains, _z_cs, _z_exp, _z_step)
+            _idx_dir = 0
+            for _i in indices:
+                if _i["symbol"] == "NIFTY 50":
+                    _idx_dir = 1 if _i.get("chg", 0) > 0 else -1
+            institutional = INST.scan(stocks, _levels,
+                                      _levels.get("avgvol", {}),
+                                      _inst_seen, sectors, _idx_dir)
+            # keep today's list, newest first, and never let it grow unbounded
+            _inst_live.extend(institutional)
+            institutional = _inst_live[-60:][::-1]
         except Exception as e:
-            print("[zerohero] error:", str(e)[:120])
-            zero_hero = []
+            print("[institutional] error:", str(e)[:120])
+            institutional = []
         _refresh_stock_opts(rows)
         if _opt_px:
             # Stop first, then target. Feeding the low before the high means a
@@ -1543,8 +1544,42 @@ def _build_dashboard_inner():
                                    "OPTION")
             except Exception as e:
                 print("cod option pick error:", e)
+            # Live progress of the call: what the option is worth now, which
+            # targets are done and at what time. Without this the card said
+            # what to do but never what happened.
+            _prog, _sig = None, None
+            try:
+                if opt:
+                    for _s in (IND.open_signals() or []) + (IND.recent_signals() or []):
+                        if _s.get("sym") == opt["symbol"]:
+                            _sig = _s
+                            break
+                    _live = _opt_px.get(opt["symbol"]) or opt["entry"]
+                    _pnl = round((_live - opt["entry"]) / opt["entry"] * 100, 1)
+                    _st = (_sig or {}).get("status", "RUNNING")
+                    if _st == "LIVE":
+                        _st = "RUNNING"
+                    _where = ("Above T3" if opt.get("t3") and _live >= opt["t3"] else
+                              "Between T2 and T3" if opt.get("t2") and _live >= opt["t2"] else
+                              "Between T1 and T2" if opt.get("t1") and _live >= opt["t1"] else
+                              "Below entry" if _live < opt["entry"] else
+                              "Between entry and T1")
+                    _prog = {
+                        "option_ltp": round(_live, 2), "pnl_pct": _pnl,
+                        "status": _st, "where": _where,
+                        "t1_at": INST.to12((_sig or {}).get("t1_at")) if (_sig or {}).get("t1_at") else None,
+                        "t2_at": INST.to12((_sig or {}).get("t2_at")) if (_sig or {}).get("t2_at") else None,
+                        "t3_at": INST.to12((_sig or {}).get("t3_at")) if (_sig or {}).get("t3_at") else None,
+                        "sl_at": INST.to12((_sig or {}).get("sl_at")) if (_sig or {}).get("sl_at") else None,
+                        "signal_time": INST.to12((_sig or {}).get("ts") or _ist_now().strftime("%H:%M")),
+                        "stock_ltp": round(px, 2),
+                        "trail": (_sig or {}).get("trail", []),
+                    }
+            except Exception as e:
+                print("[cod progress]", str(e)[:90])
+
             call_day = {**best, "view": view, "strikes": strikes, "atm": int(atm),
-                        "best_option": opt,
+                        "best_option": opt, "progress": _prog,
                         "step": step, "chain": chain,
                         "plan": ("Enter only when price trades inside the zone. "
                                  "Book part at T1, trail rest. Exit all if SL breaks.")}
@@ -1581,7 +1616,7 @@ def _build_dashboard_inner():
         "global": get_global_cues(),
         "structure": _attach_options(structure, stocks, level_key="px"),
         "index_setups": index_setups,
-        "zero_hero": zero_hero,
+        "institutional": _attach_options(institutional[:12], stocks),
         "session": sess,
         "index_bias": ibias,
         "zones": _attach_options(zones[:14], stocks),
