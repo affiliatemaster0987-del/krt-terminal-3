@@ -130,9 +130,18 @@ def scan(stocks, levels, avgvol, seen, sectors=None, index_dir=0):
 
         vol = r.get("volume") or 0
         av = (avgvol or {}).get(sym) or 0
-        rvol = round(vol / av, 1) if av else 0
-        if rvol < MIN_RVOL:
-            continue                        # no participation, no alert
+        if av:
+            rvol = round(vol / av, 1)
+            if rvol < MIN_RVOL:
+                continue                    # no participation, no alert
+            vol_known = True
+        else:
+            # Average volume is warmed in the background and is empty for the
+            # first few minutes after a restart. Treating that as "zero volume"
+            # rejected every stock and made the scanner look dead. Run without
+            # the volume test instead, and say so on the card rather than
+            # pretending the break was volume-confirmed.
+            rvol, vol_known = 0, False
 
         vwap = ind.get("vwap")
         for key, label, direction, weight in LEVELS:
@@ -163,7 +172,7 @@ def scan(stocks, levels, avgvol, seen, sectors=None, index_dir=0):
             idx_ok = (index_dir > 0) == (direction == "up") if index_dir else False
 
             score = 30 + weight
-            score += min(18, (rvol - 1) * 7)
+            score += min(18, (rvol - 1) * 7) if vol_known else -6
             score += 10 if vwap_ok else -14
             score += 8 if htf_ok else 0
             score += 6 if adx >= 25 else 0
@@ -177,7 +186,10 @@ def scan(stocks, levels, avgvol, seen, sectors=None, index_dir=0):
             score = int(max(5, min(99, score)))
 
             closed_beyond = abs(px - lvl) / lvl > CLEAR_PCT * 2
-            grade = _grade(score, rvol, vwap_ok, htf_ok, closed_beyond)
+            grade = (_grade(score, rvol, vwap_ok, htf_ok, closed_beyond)
+                     if vol_known else
+                     ("STRONG" if score >= 70 and vwap_ok else
+                      "NORMAL" if score >= 55 else "WEAK"))
             if grade == "WEAK":
                 continue                    # rejected on purpose
 
@@ -189,8 +201,10 @@ def scan(stocks, levels, avgvol, seen, sectors=None, index_dir=0):
                 "break_price": round(px, 2), "ltp": round(px, 2),
                 "chg": r.get("chg"),
                 "rvol": rvol,
-                "volume_txt": ("VERY STRONG" if rvol >= 3 else
-                               "STRONG" if rvol >= 2 else "ABOVE AVERAGE"),
+                "volume_txt": (("VERY STRONG" if rvol >= 3 else
+                                "STRONG" if rvol >= 2 else "ABOVE AVERAGE")
+                               if vol_known else "volume baseline still warming"),
+                "vol_known": vol_known,
                 "vwap": round(vwap, 2) if vwap else None,
                 "vwap_txt": ("Above VWAP" if vwap_ok and direction == "up" else
                              "Below VWAP" if vwap_ok else "VWAP not confirmed"),
@@ -203,9 +217,10 @@ def scan(stocks, levels, avgvol, seen, sectors=None, index_dir=0):
                 "opt_hint": f"{sym} {_strike(px, side):g} {side}",
                 "at": now24,
                 "at12": to12(now24),
-                "why": (f"{label} broken on {rvol}x volume · "
-                        f"{'above' if direction == 'up' else 'below'} VWAP"
-                        f"{' · 15m+1h aligned' if htf_ok else ''}"),
+                "why": ((f"{label} broken on {rvol}x volume · " if vol_known
+                         else f"{label} broken (volume baseline warming) · ")
+                        + f"{'above' if direction == 'up' else 'below'} VWAP"
+                        + f"{' · 15m+1h aligned' if htf_ok else ''}"),
             })
 
     # Strongest first, then newest. Grade outranks raw score deliberately.
