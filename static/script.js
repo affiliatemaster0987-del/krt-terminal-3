@@ -179,6 +179,14 @@ function trailBlock(t){
   ).join('<span class="tr-arrow">→</span>')}</div>`;
 }
 
+
+/* 24-hour timestamps must never reach the screen. */
+function to12(t){
+  const m=/^(\d{1,2}):(\d{2})/.exec(String(t||'')); if(!m) return t||'';
+  let h=+m[1]; const ap=h<12?'AM':'PM'; h=h%12||12;
+  return `${h}:${m[2]} ${ap}`;
+}
+
 function starN(score){
   const v = Number(score)||0;
   if(v>=90) return 5;
@@ -325,7 +333,7 @@ function sigRow(s){
   return `<div class="sig-row ${STCLS[s.status]||''}">
     <div class="sr-top"><b>${s.sym}</b>
       <span class="chip ${s.side==='BUY'?'up':'dn'}">${s.side}</span>
-      <span class="tm">${s.ts}${s.done_at?' → '+s.done_at:''}</span>
+      <span class="tm">${to12(s.ts)}${s.done_at?' → '+s.done_at:''}</span>
       ${s.score?`<span class="sc2">${s.score}/100</span>`:''}
       <span class="stt">${s.status}</span>
       ${s.pnl_pct!=null?`<span class="${s.pnl_pct>=0?'up':'dn'}">${s.pnl_pct>=0?'+':''}${s.pnl_pct}%</span>`:''}</div>
@@ -371,7 +379,7 @@ function renderTop(){
     <div class="top-row ${tierCls(s.score)}"><b>${s.sym}</b>
       <span class="chip ${s.side==='BUY'?'up':'dn'}">${s.side}</span>
       <span class="tier">${tierName(s.score)}</span>
-      <span class="tm">${s.ts}</span>
+      <span class="tm">${to12(s.ts)}</span>
       <span class="lvmini">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}</span>
       <span class="sc2">${s.score}</span>
       <span class="stt">${s.status}</span>
@@ -382,7 +390,7 @@ function renderTop(){
 }
 function waTop(sym){
   const s=(window.__top||[]).find(x=>x.sym===sym); if(!s)return;
-  openWA(`${s.side==='BUY'?'🚀':'⚠'} KRT AI ${s.side} ALERT\n\n${s.sym}  [${tierName(s.score)} ${s.score}/100]\n\nEntry: ₹${s.entry}\nSL: ₹${s.sl}\nT1: ₹${s.t1}\nT2: ₹${s.t2}${s.t3?`\nT3: ₹${s.t3}`:''}\n\nReason: ${s.setup||'-'}\nTime: ${s.ts}\nStatus: ${s.status}\n\n⚠ Educational only. Not investment advice.`);
+  openWA(`${s.side==='BUY'?'🚀':'⚠'} KRT AI ${s.side} ALERT\n\n${s.sym}  [${tierName(s.score)} ${s.score}/100]\n\nEntry: ₹${s.entry}\nSL: ₹${s.sl}\nT1: ₹${s.t1}\nT2: ₹${s.t2}${s.t3?`\nT3: ₹${s.t3}`:''}\n\nReason: ${s.setup||'-'}\nTime: ${to12(s.ts)}\nStatus: ${s.status}\n\n⚠ Educational only. Not investment advice.`);
 }
 function setTier(t){ TIER=t; store.set('tier',t); renderTop(); }
 
@@ -654,13 +662,13 @@ function renderTradeLog(t){
   };
   $('tradeLog').innerHTML = rows.length? rows.map(s=>`
     <div class="log-row ${STCLS[s.status]||''}">
-      <span class="lg-time">${s.ts}</span>
+      <span class="lg-time">${to12(s.ts)}</span>
       <b class="lg-sym">${s.sym}</b>
       <span class="chip ${s.side==='BUY'?'up':'dn'}">${s.side}</span>
       ${s.source==='INDEX'?'<span class="lg-tag idx">INDEX OPTION</span>':'<span class="lg-tag stk">STOCK</span>'}
       <span class="lg-lv">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}</span>
       ${res(s)}
-      <span class="lg-line">Given ${s.ts}${s.t1_at?` · T1 ✅ ${s.t1_at}`:''}${s.t2_at?` · T2 ✅ ${s.t2_at}`:''}${s.t3_at?` · T3 ✅ ${s.t3_at}`:''}${s.sl_at?` · SL ❌ ${s.sl_at}`:''}</span>
+      <span class="lg-line">Given ${to12(s.ts)}${s.t1_at?` · T1 ✅ ${s.t1_at}`:''}${s.t2_at?` · T2 ✅ ${s.t2_at}`:''}${s.t3_at?` · T3 ✅ ${s.t3_at}`:''}${s.sl_at?` · SL ❌ ${s.sl_at}`:''}</span>
       ${s.done_at?`<span class="lg-done">at ${s.done_at}</span>`:''}
       ${s.pnl_pct!=null?`<span class="${s.pnl_pct>=0?'up':'dn'}">${s.pnl_pct>=0?'+':''}${s.pnl_pct}%</span>`:''}
     </div>`).join('') : `<div class="empty">No calls given yet today — calls appear here with their result</div>`;
@@ -702,7 +710,7 @@ function renderStructure(list){
   $('strTag').textContent=L.length+' ALERTS · newest first';
   $('strBox').innerHTML = L.length? L.map(x=>`
     <div class="str-row ${x.dir==='up'?'sup':'sdn'}">
-      <span class="str-at">${x.at||''}</span>
+      <span class="str-at">${x.at12||to12(x.at)||''}</span>
       <b>${x.symbol}</b><span class="sec">${x.sector||''}</span>
       ${x.news?'<span class="str-news">📰 NEWS</span>':''}
       <span class="str-ev ${x.dir==='up'?'up':'dn'}">${x.big?'⭐ ':''}${x.event}</span>
@@ -787,47 +795,77 @@ $('idxSend') && ($('idxSend').onclick=()=>{
     `${x.index}: ${x.side||'WAIT'} ${x.score}/100 · spot ${x.spot} (${x.chg>=0?'+':''}${x.chg}%)${x.strikes&&x.strikes.length?` · ${x.opt} ${x.strikes[0].strike} ${x.strikes[0].type}`:''}\n   ${x.verdict}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
-/* ---------- 🚀 zero to hero (expiry-day lottery) ---------- */
-let zhData=[];
-function renderZeroHero(list){
-  zhData = list||[];
-  if(!$('zhBox')) return;
-  $('zhTag').textContent = zhData.length ? zhData.length+' LIVE' : 'NONE';
-  if(!zhData.length){
-    $('zhBox').innerHTML = `<div class="empty">No zero-to-hero setup.<br>
-      <span class="dim">These only exist on expiry day, after 1:15 pm, while the
-      index is in a fast one-way leg. Most days there is nothing here — that is
-      the honest answer, not a fault.</span></div>`;
+/* ---------- ⚡ institutional entry (F&O level-break scanner) ---------- */
+let instData=[], _instSeenIds=new Set();
+function renderInstitutional(list){
+  instData = list||[];
+  if(!$('instBox')) return;
+  const jp = instData.filter(x=>x.grade==='JACKPOT').length;
+  $('instTag').textContent = instData.length
+    ? `${instData.length} SIGNALS${jp?` · ${jp} JACKPOT`:''}` : 'SCANNING';
+
+  // A new signal should be impossible to miss, so the whole card pulses blue
+  // once and then settles rather than blinking forever.
+  const fresh = instData.filter(x=>!_instSeenIds.has(x.symbol+x.level_name));
+  instData.forEach(x=>_instSeenIds.add(x.symbol+x.level_name));
+  if(fresh.length && $('instCard')){
+    $('instCard').classList.add('inst-alert');
+    setTimeout(()=>$('instCard') && $('instCard').classList.remove('inst-alert'), 12000);
+    if(soundOn) beep(fresh.some(f=>f.grade==='JACKPOT')?'target':'buy');
+  }
+
+  if(!instData.length){
+    $('instBox').innerHTML = `<div class="empty">No institutional entry yet.<br>
+      <span class="dim">A signal needs a real level broken with at least 1.5x
+      average volume. Level touches on ordinary volume are rejected on purpose.</span></div>`;
     return;
   }
-  $('zhBox').innerHTML = zhData.map((z,i)=>`
-    <div class="zh-card ${z.side==='CE'?'up':'dn'}">
-      <div class="zh-top">
-        <b class="zh-sym">${z.symbol}</b>
-        <span class="zh-mult">${z.mult}x potential</span>
-        <span class="sc">${z.score}<small>/100</small></span>
-        ${stars(z.score)}<span class="star-word">${starWord(z.score)}</span>
-        <span class="tq tq-best">⏱ ${z.at} · ${z.left}m left</span>
+  $('instBox').innerHTML = instData.map((x,i)=>`
+    <div class="inst-row ${x.dir==='up'?'up':'dn'} g-${x.grade.toLowerCase()} ${_isNew(x)?'is-new':''}">
+      <div class="i-top">
+        <span class="i-time">${x.at12}</span>
+        <b class="i-sym">${x.symbol}</b>
+        <span class="sec">${x.sector}</span>
+        <span class="i-kind ${x.dir==='up'?'up':'dn'}">${x.kind}</span>
+        <span class="i-grade gr-${x.grade.toLowerCase()}">${x.grade==='JACKPOT'?'🔥 ':''}${x.grade}</span>
+        <span class="i-px">₹${fmt(x.ltp)} ${x.chg>=0?'▲':'▼'}${Math.abs(x.chg||0)}%</span>
       </div>
-      <div class="zh-lv">
-        <span class="e">ENTRY ₹${z.entry}</span>
-        <span class="t">TARGET ₹${z.target}</span>
-        <span class="s">SL ₹${z.sl}</span>
+      <div class="i-lvl">${x.level_name} broken at <b>₹${x.level}</b>
+        · break price ₹${x.break_price}</div>
+      <div class="i-conf">
+        <span class="vol-${x.rvol>=3?'hi':x.rvol>=2?'md':'lo'}">Volume ${x.volume_txt} (${x.rvol}x)</span>
+        <span class="${x.vwap_txt.startsWith('Above')||x.vwap_txt.startsWith('Below')?'ok':'no'}">${x.vwap_txt}</span>
+        ${x.htf_ok?'<span class="ok">15m + 1h aligned</span>':''}
+        ${x.adx?`<span>ADX ${x.adx}</span>`:''}
+        ${x.rsi!=null?`<span>RSI ${x.rsi}</span>`:''}
+        ${x.sector_ok?'<span class="ok">Sector agrees</span>':''}
+        <span class="i-score">${x.score}/100</span>
       </div>
-      <div class="zh-why">${z.why}</div>
-      <div class="zh-risk">⚠ ${z.risk}</div>
-      <button class="btn wa" onclick="waZH(${i})">🟢 WA</button>
+      ${x.option?optBlock(x.option):`<div class="i-hint"><span class="opt-sug">${x.opt_hint} ${expiryTag()}</span></div>`}
+      <button class="btn wa mini" onclick="waInst(${i})">🟢 WA</button>
     </div>`).join('');
 }
-function waZH(i){
-  const z=zhData[i]; if(!z) return;
-  openWA(`🚀 ZERO TO HERO\n${z.symbol}\nEntry ₹${z.entry} · Target ₹${z.target} (${z.mult}x) · SL ₹${z.sl}\n${z.why}\n\n⚠ ${z.risk}`);
+function _isNew(x){
+  const m=/(\d{1,2}):(\d{2})/.exec(x.at||''); if(!m) return false;
+  const d=new Date(); const mins=d.getHours()*60+d.getMinutes();
+  return mins-((+m[1])*60+(+m[2])) <= 3;      // fired in the last 3 minutes
 }
-$('zhSend') && ($('zhSend').onclick=()=>{
-  if(!zhData.length) return openWA('No zero-to-hero setup right now.');
-  openWA('🚀 ZERO TO HERO\n\n'+zhData.map(z=>
-    `${z.symbol} · ₹${z.entry} → ₹${z.target} (${z.mult}x) · SL ₹${z.sl}`).join('\n')
-    +'\n\n⚠ Expiry lottery — assume total loss.');
+function iMsg(x){
+  return `⚡ INSTITUTIONAL ENTRY\n${x.symbol} — ${x.kind}\n${x.level_name}\n`
+    +`Break Price: ₹${x.break_price}\nTime: ${x.at12}\n`
+    +`Volume: ${x.volume_txt} (${x.rvol}x)\n${x.vwap_txt}\n`
+    +(x.option?`\nSuggested Option: ${x.option.symbol}\nOption LTP: ₹${x.option.ltp}\n`
+      +`SL ₹${x.option.sl} · T1 ₹${x.option.t1} · T2 ₹${x.option.t2}\n`
+      +`OI ${x.option.oi} · IV ${x.option.iv||'-'}%\n`
+      :`\nSuggested Option: ${x.opt_hint}\n`)
+    +`Confidence: ${x.score}/100 · ${x.grade}\n\n⚠ Educational only. Not investment advice.`;
+}
+function waInst(i){ if(instData[i]) openWA(iMsg(instData[i])); }
+$('instSend') && ($('instSend').onclick=()=>{
+  if(!instData.length) return openWA('No institutional entry signal right now.');
+  openWA('⚡ INSTITUTIONAL ENTRY\n\n'+instData.slice(0,6).map(x=>
+    `${x.at12} ${x.symbol} ${x.kind} · ${x.level_name} · ${x.rvol}x vol · ${x.opt_hint} · ${x.score}/100`
+  ).join('\n')+'\n\n⚠ Educational only.');
 });
 
 /* ---------- session + index bias ---------- */
@@ -875,7 +913,21 @@ function renderCOD(c){
         <span class="bo-mn">${c.best_option.moneyness}</span>
         <span class="bo-rr">R:R 1:${c.best_option.rr}</span></div>
       <div class="pb-grid">
-        <div class="pb-cell"><div class="k">ENTRY</div><div class="v">₹${c.best_option.entry}</div></div>
+        <div class="pb-cell"><div class="k">ENTRY</div><div class="v">₹${c.best_option.entry}</div>${c.progress?`
+      <div class="cod-prog">
+        <div class="cp-head">SIGNAL ${c.progress.signal_time} · STOCK ₹${c.progress.stock_ltp}
+          <span class="cp-status st-${(c.progress.status||'').split(' ')[0].toLowerCase()}">${c.progress.status}</span></div>
+        <div class="cp-live">OPTION LTP NOW <b>₹${c.progress.option_ltp}</b>
+          <span class="${c.progress.pnl_pct>=0?'up':'dn'}">${c.progress.pnl_pct>=0?'+':''}${c.progress.pnl_pct}%</span></div>
+        <div class="cp-tg">
+          <span class="${c.progress.t1_at?'hit':''}">T1 ${c.progress.t1_at?`✅ ${c.progress.t1_at}`:'⏳'}</span>
+          <span class="${c.progress.t2_at?'hit':''}">T2 ${c.progress.t2_at?`✅ ${c.progress.t2_at}`:'⏳'}</span>
+          <span class="${c.progress.t3_at?'hit':''}">T3 ${c.progress.t3_at?`✅ ${c.progress.t3_at}`:'⏳'}</span>
+          ${c.progress.sl_at?`<span class="sl">SL ❌ ${c.progress.sl_at}</span>`:''}
+        </div>
+        <div class="cp-where">CURRENT: ${c.progress.where}</div>
+        ${trailBlock(c.progress.trail)}
+      </div>`:''}</div>
         <div class="pb-cell sl"><div class="k">SL</div><div class="v">₹${c.best_option.sl}</div><div class="p">${c.best_option.sl_pct}%</div></div>
         <div class="pb-cell tg"><div class="k">TARGET 1</div><div class="v">₹${c.best_option.t1}</div><div class="p">+${c.best_option.t1_pct}%</div></div>
         <div class="pb-cell tg"><div class="k">TARGET 2</div><div class="v">₹${c.best_option.t2}</div><div class="p">+${c.best_option.t2_pct}%</div></div>
@@ -1105,7 +1157,7 @@ async function refresh(){
     safe(renderOptions,'renderOptions',uniq, rank, sectors.length);
     safe(renderSession,'renderSession',d.session, d.index_bias);
     safe(renderIdxSetups,'renderIdxSetups',d.index_setups);
-    safe(renderZeroHero,'renderZeroHero',d.zero_hero);
+    safe(renderInstitutional,'renderInstitutional',d.institutional);
     safe(renderStructure,'renderStructure',d.structure);
     safe(renderTradeLog,'renderTradeLog',d.tracker);
     (d.structure||[]).forEach(x=>{
