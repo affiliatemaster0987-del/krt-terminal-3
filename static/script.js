@@ -815,9 +815,21 @@ function renderInstitutional(list){
   }
 
   if(!instData.length){
+    const L = (window.__levels)||{};
+    // Say which stage is missing instead of an empty box the user cannot act on.
+    let reason = 'A signal needs a real level broken with at least 1.5x average '
+               + 'volume. Level touches on ordinary volume are rejected on purpose.';
+    if(!L.tokens)      reason = `Stock tokens still loading (${L.tokens||0} resolved). `
+                              + `The scanner has nothing to scan until that finishes.`;
+    else if(!L.pdh)    reason = `Previous day / week / month levels have not loaded yet `
+                              + `(0 of ${L.tokens} symbols). There is nothing to break yet. `
+                              + (L.last_error?`Last error: ${L.last_error}`:'Check the server log for [levels].');
+    else if(!L.avgvol) reason = `Levels ready for ${L.pdh} symbols, volume baseline still `
+                              + `warming — breaks are being graded without the volume test for now.`;
+    else               reason = `Watching ${L.pdh} symbols with a volume baseline on ${L.avgvol}. `
+                              + `Nothing has broken a level on real volume yet.`;
     $('instBox').innerHTML = `<div class="empty">No institutional entry yet.<br>
-      <span class="dim">A signal needs a real level broken with at least 1.5x
-      average volume. Level touches on ordinary volume are rejected on purpose.</span></div>`;
+      <span class="dim">${reason}</span></div>`;
     return;
   }
   $('instBox').innerHTML = instData.map((x,i)=>`
@@ -1157,6 +1169,7 @@ async function refresh(){
     safe(renderOptions,'renderOptions',uniq, rank, sectors.length);
     safe(renderSession,'renderSession',d.session, d.index_bias);
     safe(renderIdxSetups,'renderIdxSetups',d.index_setups);
+    window.__levels = d.levels_state || {};
     safe(renderInstitutional,'renderInstitutional',d.institutional);
     safe(renderStructure,'renderStructure',d.structure);
     safe(renderTradeLog,'renderTradeLog',d.tracker);
