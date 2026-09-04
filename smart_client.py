@@ -492,7 +492,10 @@ def _warm_levels_yahoo():
     if _levels["pdh"]:
         _levels["day"] = today
         _levels_save()
-    print(f"[levels/yahoo] {ok} symbols")
+    print(f"[levels/yahoo] {ok} symbols · pdh now {len(_levels['pdh'])}"
+          f" · avgvol {len(_levels['avgvol'])}")
+    if not ok and _diag.get("sample_error"):
+        print("[levels/yahoo] first error:", _diag["sample_error"][:160])
 
 
 def _warm_or_yahoo():
@@ -1624,6 +1627,14 @@ def _build_dashboard_inner():
         "tracker": IND.stats(),
         "ind_ready": sum(1 for r in stocks if (r.get("ind") or {}).get("ready")),
         "levels_ready": bool(_levels["pdh"]),
+        "levels_state": {
+            "pdh": len(_levels["pdh"]), "pwh": len(_levels["pwh"]),
+            "pmh": len(_levels["pmh"]), "avgvol": len(_levels["avgvol"]),
+            "day": _levels.get("day"), "tokens": _diag.get("tokens", 0),
+            "source": _diag.get("source", ""),
+            "last_error": (_diag.get("sample_error") or
+                           _diag.get("last_error") or "")[:180],
+        },
         "levels_diag": {**_diag, "pdh": len(_levels["pdh"]), "pwh": len(_levels["pwh"]),
                         "orh": len(_levels["orh"])},
         "universe": len(stocks),
