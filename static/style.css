@@ -735,3 +735,34 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .cp-tg .hit{ background:rgba(22,214,122,.16); color:#16d67a }
 .cp-tg .sl{ background:rgba(255,77,94,.16); color:#ff4d5e }
 .cp-where{ font-size:.66rem; color:#ffd83d; margin-top:8px; font-weight:700 }
+
+/* ═══════════ GAMMA SQUEEZE (added) ═══════════ */
+.gammacard{ border:1px solid rgba(190,120,255,.32);
+  background:linear-gradient(180deg,rgba(190,120,255,.06),transparent 60%); }
+.gam-row{ border-left:3px solid #be78ff; border-radius:10px; padding:12px 14px;
+  margin-bottom:10px; background:rgba(255,255,255,.02); }
+.gam-row.up{ border-left-color:#16d67a } .gam-row.dn{ border-left-color:#ff4d5e }
+.g-top{ display:flex; align-items:center; flex-wrap:wrap; gap:7px }
+.g-sym{ font-size:1rem; letter-spacing:.02em }
+.g-act{ font-size:.62rem; font-weight:900; letter-spacing:.06em;
+  padding:2px 9px; border-radius:5px }
+.g-act.up{ background:rgba(22,214,122,.16); color:#16d67a }
+.g-act.dn{ background:rgba(255,77,94,.16); color:#ff4d5e }
+.g-reg{ font-size:.56rem; font-weight:800; letter-spacing:.07em; padding:2px 8px;
+  border-radius:5px; background:rgba(190,120,255,.16); color:#be78ff }
+.g-px{ margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:.76rem }
+.g-magnet{ font-size:.66rem; color:var(--dim); margin:9px 0 8px;
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center }
+.g-magnet b{ color:#be78ff; font-family:'JetBrains Mono',monospace }
+.g-tilt,.g-exp{ font-size:.58rem; padding:2px 7px; border-radius:4px;
+  background:rgba(255,255,255,.04) }
+.g-walls{ display:flex; flex-wrap:wrap; gap:14px; margin-bottom:8px }
+.wl-h{ font-size:.55rem; letter-spacing:.08em; color:var(--dim);
+  margin-right:6px; font-weight:700 }
+.wl{ font-size:.58rem; font-family:'JetBrains Mono',monospace; padding:2px 7px;
+  border-radius:4px; margin-right:4px; background:rgba(255,255,255,.04);
+  color:var(--dim) }
+.wl.un{ background:rgba(22,214,122,.14); color:#16d67a }
+.wl.bu{ background:rgba(255,77,94,.12); color:#ff8792 }
+.g-why{ font-size:.68rem; color:#e6e9f0; line-height:1.55; margin-bottom:4px }
+.g-note{ font-size:.58rem; color:var(--dim); line-height:1.5; margin-top:6px }
