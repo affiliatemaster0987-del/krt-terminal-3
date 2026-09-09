@@ -16,6 +16,7 @@ import confluence as CONF
 import corporate as CORP
 import optionpick as OPT
 import institutional as INST
+import gamma as GAM
 import optengine as OE
 import store as _ST
 from datetime import datetime, timedelta
@@ -938,6 +939,43 @@ def _attach_options(rows, stocks, level_key="ltp", limit=10):
     return rows
 
 
+
+def _gamma_calls(stocks):
+    """Stock-option calls driven by dealer hedging pressure, not by the chart.
+
+    Only the strikes we already hold a chain for are examined, so this adds no
+    extra API load. Returns [] on most days — a genuine squeeze is rare.
+    """
+    try:
+        chains, cand = {}, []
+        for r in (stocks or [])[:40]:
+            if not r.get("ltp") or not (r.get("ind") or {}).get("ready"):
+                continue
+            ch = OC.get_chain(r["symbol"], r["ltp"])
+            if ch:
+                chains[r["symbol"]] = ch
+                cand.append(r)
+        rows = GAM.scan(cand, chains)
+        # give each one the actual contract to trade
+        for g in rows:
+            ch = chains.get(g["symbol"])
+            sig = {"symbol": g["symbol"],
+                   "side": "BUY" if g["bias"] == "UP" else "SELL",
+                   "ltp": g["spot"], "score": g["score"]}
+            atr = max(g["spot"] * 0.008, 0.05)
+            sgn = 1 if g["bias"] == "UP" else -1
+            sig.update(sl=round(g["spot"] - sgn * 1.2 * atr, 2),
+                       t1=round(g["spot"] + sgn * 1.5 * atr, 2),
+                       t2=round(g["spot"] + sgn * 2.5 * atr, 2),
+                       t3=round(g["spot"] + sgn * 4.0 * atr, 2))
+            g["option"] = OE.enrich(sig, ch, next(
+                (r.get("ind") for r in cand if r["symbol"] == g["symbol"]), {}))
+        return rows
+    except Exception as e:
+        print("[gamma] error:", str(e)[:120])
+        return []
+
+
 def _build_dashboard_inner():
     rows, mode = get_quotes()
     indices = [r for r in rows if r["symbol"] in INDICES]
@@ -1115,7 +1153,11 @@ def _build_dashboard_inner():
             rng = hi - lo
             vwap = ind.get("vwap")
             atr = ind.get("atr") or rng * 0.25
-            pos = (px - lo) / rng if rng else 0.5      # where in day range
+            # Before 9:15 the day range is a single pre-open print, so high and
+            # low are the same number and every stock read as "near day high"
+            # AND "near day low" at once. Treat a range that thin as no
+            # information rather than as both extremes.
+            pos = (px - lo) / rng if (rng and rng / px > 0.001) else 0.5
             rk = srank2.get(r["sector"], 99)
             strong_sec = rk <= 3
             weak_sec = rk >= max(1, len(sectors) - 2)
@@ -1352,8 +1394,12 @@ def _build_dashboard_inner():
                 elif rsi <= 42: bear += 1; why.append(f"RSI {rsi}")
             if htf == 1: bull += 1; why.append("HTF up")
             elif htf == -1: bear += 1; why.append("HTF down")
-            if dh and spot >= dh * 0.999: bull += 1; why.append("near day high")
-            if dl and spot <= dl * 1.001: bear += 1; why.append("near day low")
+            # Pre-open the day high equals the day low, so both of these fired
+            # at once and the card read "near day high, near day low". Only use
+            # them once the session has built a real range.
+            _rng_ok = bool(dh and dl and (dh - dl) / max(spot, 1) > 0.0015)
+            if _rng_ok and spot >= dh * 0.999: bull += 1; why.append("near day high")
+            if _rng_ok and spot <= dl * 1.001: bear += 1; why.append("near day low")
 
             _m2 = _ist_now().hour * 60 + _ist_now().minute
             chain = OC.get_chain(opt, spot) if 540 <= _m2 <= 935 else None
@@ -1620,6 +1666,7 @@ def _build_dashboard_inner():
         "structure": _attach_options(structure, stocks, level_key="px"),
         "index_setups": index_setups,
         "institutional": _attach_options(institutional[:12], stocks),
+        "gamma": _gamma_calls(stocks),
         "session": sess,
         "index_bias": ibias,
         "zones": _attach_options(zones[:14], stocks),
