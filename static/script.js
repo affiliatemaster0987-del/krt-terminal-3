@@ -880,6 +880,65 @@ $('instSend') && ($('instSend').onclick=()=>{
   ).join('\n')+'\n\n⚠ Educational only.');
 });
 
+
+/* ---------- 🌀 gamma squeeze (option writer pressure) ---------- */
+let gamData=[];
+function renderGamma(list){
+  gamData = list||[];
+  if(!$('gamBox')) return;
+  $('gamTag').textContent = gamData.length ? gamData.length+' SQUEEZE' : 'NONE';
+  if(!gamData.length){
+    $('gamBox').innerHTML = `<div class="empty">No gamma squeeze right now.<br>
+      <span class="dim">This needs open interest actually unwinding at a heavy
+      strike while price presses into it. Balanced walls and pinned strikes are
+      excluded on purpose — buying options into a pin loses to theta.</span></div>`;
+    return;
+  }
+  $('gamBox').innerHTML = gamData.map((g,i)=>`
+    <div class="gam-row ${g.bias==='UP'?'up':'dn'}">
+      <div class="g-top">
+        <b class="g-sym">${g.symbol}</b>
+        <span class="sec">${g.sector||''}</span>
+        <span class="g-act ${g.bias==='UP'?'up':'dn'}">${g.action} ${g.side}</span>
+        <span class="g-reg">${g.regime}</span>
+        <span class="sc">${g.score}<small>/100</small></span>
+        ${stars(g.score)}${lightChip(g.score)}
+        <span class="g-px">₹${fmt(g.spot)}</span>
+      </div>
+      <div class="g-magnet">
+        MAGNET STRIKE <b>${g.magnet}</b> · OI ${fmtK(g.magnet_oi)}
+        <span class="${g.magnet_chg_oi<0?'up':'dn'}">ΔOI ${g.magnet_chg_oi>=0?'+':''}${fmtK(g.magnet_chg_oi)}</span>
+        <span class="g-tilt">tilt ${g.tilt>0?'+':''}${g.tilt}</span>
+        <span class="g-exp">${g.days_to_expiry}d to expiry</span>
+      </div>
+      <div class="g-walls">
+        <div><span class="wl-h">CALL WALLS</span>${(g.call_walls||[]).map(w=>
+          `<span class="wl ${w.chg_oi<0?'un':'bu'}">${w.strike} · ${fmtK(w.oi)} ${w.chg_oi>=0?'+':''}${fmtK(w.chg_oi)}</span>`).join('')||'<span class="wl">none near spot</span>'}</div>
+        <div><span class="wl-h">PUT WALLS</span>${(g.put_walls||[]).map(w=>
+          `<span class="wl ${w.chg_oi<0?'un':'bu'}">${w.strike} · ${fmtK(w.oi)} ${w.chg_oi>=0?'+':''}${fmtK(w.chg_oi)}</span>`).join('')||'<span class="wl">none near spot</span>'}</div>
+      </div>
+      <div class="g-why">${g.why}</div>
+      ${optBlock(g.option)}
+      <div class="g-note">${g.note}</div>
+      <button class="btn wa mini" onclick="waGam(${i})">🟢 WA</button>
+    </div>`).join('');
+}
+function waGam(i){
+  const g=gamData[i]; if(!g) return;
+  openWA(`🌀 GAMMA SQUEEZE\n${g.symbol} — ${g.action} ${g.side}\n`
+    +`Spot ₹${g.spot} · Magnet strike ${g.magnet} (OI ${g.magnet_oi}, ΔOI ${g.magnet_chg_oi})\n`
+    +`Tilt ${g.tilt} · ${g.days_to_expiry}d to expiry · Score ${g.score}/100\n`
+    +(g.option?`\n📄 ${g.option.symbol}\nLTP ₹${g.option.ltp} · SL ₹${g.option.sl} · T1 ₹${g.option.t1} · T2 ₹${g.option.t2}\n`
+      +`Premium rise probability ${g.option.premium_rise_prob}% · Confidence ${g.option.confidence}/100\n`:'')
+    +`\n${g.why}\n\n⚠ ${g.note} Educational only.`);
+}
+$('gamSend') && ($('gamSend').onclick=()=>{
+  if(!gamData.length) return openWA('No gamma squeeze right now.');
+  openWA('🌀 GAMMA SQUEEZE\n\n'+gamData.map(g=>
+    `${g.symbol} ${g.action} ${g.side} · magnet ${g.magnet} · tilt ${g.tilt} · ${g.score}/100`
+  ).join('\n')+'\n\n⚠ Educational only.');
+});
+
 /* ---------- session + index bias ---------- */
 function renderSession(sess, ib){
   if(sess && $('sessPill')){
@@ -1171,6 +1230,7 @@ async function refresh(){
     safe(renderIdxSetups,'renderIdxSetups',d.index_setups);
     window.__levels = d.levels_state || {};
     safe(renderInstitutional,'renderInstitutional',d.institutional);
+    safe(renderGamma,'renderGamma',d.gamma);
     safe(renderStructure,'renderStructure',d.structure);
     safe(renderTradeLog,'renderTradeLog',d.tracker);
     (d.structure||[]).forEach(x=>{
