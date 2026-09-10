@@ -1469,6 +1469,20 @@ def _build_dashboard_inner():
                 strikes, sl_lvl, t1, t2, t3 = [], None, None, None, None
 
             # ── PREMIUM TRADE PLAN for the ATM strike ──
+            # Without a chain there is no premium, but the strike itself is
+            # still known from the spot and the step. Showing "NIFTY 23500 CE
+            # — premium loading" is far more use than showing nothing at all,
+            # which is what happened whenever the chain was late.
+            if side and not chain and strikes:
+                trade = {
+                    "symbol": f"{opt} {int(strikes[0]['strike'])} {side}",
+                    "strike": int(strikes[0]["strike"]), "type": side,
+                    "entry": None, "no_chain": True,
+                    "spot_sl": sl_lvl, "spot_t1": t1, "spot_t2": t2, "spot_t3": t3,
+                    "note": ("Option chain has not loaded for this index yet, so "
+                             "the premium, OI and max pain are missing. The strike "
+                             "and the spot levels are still valid."),
+                }
             if side and chain:
                 pick = strikes[0]["strike"]
                 q = OC.strike_quote(chain, pick, side)
@@ -1507,7 +1521,10 @@ def _build_dashboard_inner():
                 _opt_hi[trade["symbol"]] = trade["entry"]
                 IND.log_signal(trade["symbol"], "BUY", trade["entry"], trade["sl"],
                                trade["t1"], trade["t2"], trade["t3"],
-                               score, f"{name} {side} · {', '.join(why[:3])}", "INDEX")
+                               score, f"{name} {side} · {', '.join(why[:3])}",
+                               "INDEX",
+                               spot_sl=trade.get("spot_sl"),
+                               underlying=name)
 
             index_setups.append({
                 "index": name, "opt": opt, "spot": round(spot, 2), "chg": chg,
@@ -1543,8 +1560,10 @@ def _build_dashboard_inner():
             # Stop first, then target. Feeding the low before the high means a
             # premium that touched the stop is reported as a stop, even if it
             # later reached the target — which is what actually happened to you.
-            if _opt_lo:
-                IND.update_tracker(dict(_opt_lo))
+            # The running low used to be fed in, so a single tick touching the
+            # premium stop closed the call even when the trade was fine. The
+            # stop is judged on the underlying now, so the low is no longer a
+            # stop input — only the highs, which confirm targets honestly.
             if _opt_hi:
                 IND.update_tracker(dict(_opt_hi))
             IND.update_tracker(dict(_opt_px))
@@ -1603,7 +1622,9 @@ def _build_dashboard_inner():
                                    opt["t1"], opt["t2"], opt["t3"],
                                    opt["confidence"],
                                    f"{best['symbol']} {best['side']} · {opt['why']}",
-                                   "OPTION")
+                                   "OPTION",
+                                   spot_sl=best.get("sl"),
+                                   underlying=best["symbol"])
             except Exception as e:
                 print("cod option pick error:", e)
             # Live progress of the call: what the option is worth now, which
