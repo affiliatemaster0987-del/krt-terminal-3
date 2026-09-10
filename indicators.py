@@ -419,7 +419,8 @@ def _mins_since(hhmm, date):
         return 9999
 
 
-def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="", source="JACKPOT"):
+def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="",
+               source="JACKPOT", spot_sl=None, underlying=None):
     """Cooldown: same stock+side 15 min-ku ulla thirumba log aagadhu."""
     # There was no time gate at all, so calls were being logged at 15:50 and
     # even 16:25 — after the close, on frozen prices. Those are the rows that
@@ -445,6 +446,13 @@ def log_signal(sym, side, entry, sl, t1, t2, t3=None, score=None, setup="", sour
            "ts": _ist().strftime("%H:%M"), "date": today,
            "status": "LIVE", "t1_at": None, "t2_at": None, "t3_at": None,
            "sl_at": None, "done_at": None, "best": entry, "pnl_pct": None,
+           # An option premium swings 30-40% intraday as a matter of course, so
+           # a premium stop that distance away sits inside normal noise and is
+           # taken out on nearly every trade — which is exactly what happened.
+           # The real invalidation is the underlying breaking its level, so
+           # that is what closes the trade. The premium stop is kept only as a
+           # disaster floor far below.
+           "spot_sl": spot_sl, "underlying": underlying,
            # Full lifecycle with a timestamp on every state change, so a call
            # can never sit on RUNNING with no explanation of what happened.
            "trail": [{"state": "TRIGGERED", "at": _ist().strftime("%H:%M:%S"),
@@ -503,7 +511,16 @@ def update_tracker(price_map):
         s["best"] = max(s["best"], px) if buy else min(s["best"], px)
         s["pnl_pct"] = round(((px - s["entry"]) if buy else (s["entry"] - px)) / s["entry"] * 100, 2)
         hit = lambda lvl: (px >= lvl) if buy else (px <= lvl)
-        stop = (px <= s["sl"]) if buy else (px >= s["sl"])
+        # Decide the stop on the underlying where we have it. Only if the
+        # premium collapses far beyond the plan do we treat it as a disaster
+        # exit, because at that point the option is no longer the trade.
+        u_px = price_map.get(s.get("underlying")) if s.get("underlying") else None
+        if s.get("spot_sl") and u_px:
+            stop = (u_px <= s["spot_sl"]) if buy else (u_px >= s["spot_sl"])
+            if not stop and px <= s["entry"] * 0.35:
+                stop = True                  # premium down 65%: cut regardless
+        else:
+            stop = (px <= s["sl"]) if buy else (px >= s["sl"])
         # Every state change is stamped, so a call can never sit on RUNNING
         # with no record of what happened to it.
         def _mark(state, extra=None):
