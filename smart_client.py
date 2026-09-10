@@ -17,6 +17,7 @@ import corporate as CORP
 import optionpick as OPT
 import institutional as INST
 import gamma as GAM
+import dailyhist as DH
 import optengine as OE
 import store as _ST
 from datetime import datetime, timedelta
@@ -992,6 +993,18 @@ def _build_dashboard_inner():
     # ── self-built candles + real indicators ──
     try:
         IND.feed(stocks + indices, live=(mode == "live"))
+        # Build our own daily history from the candles we already collect, and
+        # use it to fill the levels the external sources could not supply.
+        # This is what stops the terminal sitting on 5 symbols out of 141.
+        try:
+            global _hist_tick
+            _hist_tick = (globals().get("_hist_tick") or 0) + 1
+            if mode == "live" and _hist_tick % 15 == 1:
+                DH.record(IND.CANDLES)
+            if _hist_tick % 15 == 1:
+                DH.merge_into(_levels)
+        except Exception as e:
+            print("[dailyhist] merge failed:", str(e)[:110])
         IND.enrich(stocks)
         IND.enrich(indices)
         _pmap = {r["symbol"]: r["ltp"] for r in stocks}
@@ -1679,6 +1692,7 @@ def _build_dashboard_inner():
             "pmh": len(_levels["pmh"]), "avgvol": len(_levels["avgvol"]),
             "day": _levels.get("day"), "tokens": _diag.get("tokens", 0),
             "source": _diag.get("source", ""),
+            "hist": DH.coverage(),
             "last_error": (_diag.get("sample_error") or
                            _diag.get("last_error") or "")[:180],
         },
