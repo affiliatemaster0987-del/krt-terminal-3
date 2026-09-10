@@ -752,7 +752,14 @@ function renderIdxSetups(list){
         <span class="i-conf">conf ${x.conf} · bull ${x.bull} / bear ${x.bear}</span></div>
       ${x.strikes&&x.strikes.length?`<div class="opt-row2">${x.strikes.map(o=>`
         <span class="opt-chip ${o.type==='CE'?'ce':'pe'}">${x.opt} ${o.strike} ${o.type}<i>${o.label}</i></span>`).join('')}</div>`:''}
-      ${x.trade?`<div class="prem-box">
+      ${x.trade&&x.trade.no_chain?`<div class="prem-box nochain">
+        <div class="pb-head"><b>${x.trade.symbol}</b>
+          <span class="pb-entry dim">premium loading…</span></div>
+        <div class="pb-spot">Spot SL ${fmt(x.trade.spot_sl)} · T1 ${fmt(x.trade.spot_t1)}
+          · T2 ${fmt(x.trade.spot_t2)}</div>
+        <div class="pb-note">${x.trade.note}</div>
+      </div>`:''}
+      ${x.trade&&!x.trade.no_chain?`<div class="prem-box">
         <div class="pb-head"><b>${x.trade.symbol}</b>
           <span class="pb-entry">ENTRY ₹${fmt(x.trade.entry)}</span>
           <span class="pb-rr">R:R 1:${x.trade.rr}</span></div>
@@ -795,6 +802,8 @@ $('idxSend') && ($('idxSend').onclick=()=>{
     `${x.index}: ${x.side||'WAIT'} ${x.score}/100 · spot ${x.spot} (${x.chg>=0?'+':''}${x.chg}%)${x.strikes&&x.strikes.length?` · ${x.opt} ${x.strikes[0].strike} ${x.strikes[0].type}`:''}\n   ${x.verdict}`).join('\n\n')+
     '\n\n⚠ Educational only. Not investment advice.');
 });
+
+
 /* ---------- ⚡ institutional entry (F&O level-break scanner) ---------- */
 let instData=[], _instSeenIds=new Set();
 function renderInstitutional(list){
@@ -1273,7 +1282,5 @@ async function refreshNews(){
 refresh(); refreshNews();
 setInterval(refresh, CONFIG.REFRESH_MS);
 setInterval(refreshNews, 90000);          // news every 90s — much lighter
-
-
 
 
