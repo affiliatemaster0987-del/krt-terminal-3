@@ -828,6 +828,13 @@ function renderInstitutional(list){
                               + `warming — breaks are being graded without the volume test for now.`;
     else               reason = `Watching ${L.pdh} symbols with a volume baseline on ${L.avgvol}. `
                               + `Nothing has broken a level on real volume yet.`;
+    const H = L.hist||{};
+    if(H.sessions!=null) reason += ` Self-built history: ${H.symbols} symbols over `
+                              + `${H.sessions} session${H.sessions===1?'':'s'}`
+                              + (H.sessions<2 ? ' — previous-day levels appear from tomorrow.'
+                               : H.sessions<5 ? ' — weekly levels need a few more sessions.'
+                               : H.sessions<16? ' — monthly levels need a few more sessions.'
+                               : '.');
     $('instBox').innerHTML = `<div class="empty">No institutional entry yet.<br>
       <span class="dim">${reason}</span></div>`;
     return;
