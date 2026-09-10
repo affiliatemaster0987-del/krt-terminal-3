@@ -766,3 +766,10 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .wl.bu{ background:rgba(255,77,94,.12); color:#ff8792 }
 .g-why{ font-size:.68rem; color:#e6e9f0; line-height:1.55; margin-bottom:4px }
 .g-note{ font-size:.58rem; color:var(--dim); line-height:1.5; margin-top:6px }
+
+/* strike known but chain not loaded yet */
+.prem-box.nochain{ border-style:dashed; opacity:.92 }
+.prem-box.nochain .pb-entry.dim{ color:var(--dim); font-style:italic }
+.pb-spot{ font-family:'JetBrains Mono',monospace; font-size:.68rem;
+  color:#57b7ff; margin:7px 0 5px }
+.pb-note{ font-size:.6rem; color:var(--dim); line-height:1.5 }
