@@ -62,7 +62,7 @@ def _walls(chain, spot, side):
             continue
         out.append({
             "strike": strike, "oi": oi,
-            "chg_oi": float(v.get("chg") or 0),
+            "chg_oi": float(v.get("chg_oi") or 0),
             "vol": float(v.get("vol") or v.get("volume") or 0),
             "ltp": float(v.get("ltp") or 0),
             "dist": abs(strike - spot) / spot,
