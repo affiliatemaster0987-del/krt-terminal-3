@@ -916,6 +916,18 @@ def _attach_options(rows, stocks, level_key="ltp", limit=10):
         if not sym or not px:
             continue
         try:
+            # A breakout row only knows the level it broke. Build the trade plan
+            # from that level: the stop sits just back inside it, because a
+            # break that fails is exactly the level being reclaimed.
+            if r.get("level") and not r.get("sl"):
+                lvl = float(r["level"])
+                up = (r.get("dir") == "up")
+                sgn = 1 if up else -1
+                atr = max(abs(px - lvl), px * 0.004)
+                r["sl"] = round(lvl - sgn * atr * 0.35, 2)
+                r["t1"] = round(px + sgn * atr * 1.2, 2)
+                r["t2"] = round(px + sgn * atr * 2.0, 2)
+                r["t3"] = round(px + sgn * atr * 3.2, 2)
             ch = OC.get_chain(sym, px)
             if not ch:
                 continue
@@ -1516,7 +1528,13 @@ def _build_dashboard_inner():
 
             # conf 4 was so strict that only one index ever reached the trade log.
             # 3 lets BANKNIFTY / FINNIFTY calls be logged and tracked too.
-            if trade and conf >= 3 and 555 <= (_ist_now().hour * 60 + _ist_now().minute) <= 915:
+            # conf 3 meant only the single strongest index ever reached the
+            # trade log. Every index with a real directional read and a priced
+            # contract belongs there — the log is the honest record, and a
+            # weaker call that is tracked is more useful than one that is
+            # silently dropped.
+            if (trade and trade.get("entry") and conf >= 2
+                    and 555 <= (_ist_now().hour * 60 + _ist_now().minute) <= 915):
                 _opt_lo[trade["symbol"]] = trade["entry"]
                 _opt_hi[trade["symbol"]] = trade["entry"]
                 IND.log_signal(trade["symbol"], "BUY", trade["entry"], trade["sl"],
@@ -1699,7 +1717,7 @@ def _build_dashboard_inner():
         "global": get_global_cues(),
         "structure": _attach_options(structure, stocks, level_key="px"),
         "index_setups": index_setups,
-        "institutional": _attach_options(institutional[:12], stocks),
+        "institutional": _attach_options(institutional[:12], stocks, limit=12),
         "gamma": _gamma_calls(stocks),
         "session": sess,
         "index_bias": ibias,
