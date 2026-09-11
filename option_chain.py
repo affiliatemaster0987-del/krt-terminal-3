@@ -15,6 +15,10 @@ from datetime import datetime, timedelta
 
 _lock = threading.Lock()
 _cache = {}          # sym -> {"ts":, "data":}
+# token -> last seen open interest, so change-in-OI can be derived. Angel does
+# not give it directly and "netChange" is the price change, not the OI change.
+_oi_prev = {}
+_search_cache = {}   # sym -> contracts found via searchScrip
 CACHE_SEC = 420          # 7 min — chain moves slowly, saves API load      # option chain 3 min-ku oru dhadava podhum
 _master = {"rows": [], "ts": 0, "loading": False}
 # Index option chains mattum thevai — stock options thevai illa (RAM saving)
@@ -231,8 +235,57 @@ def _load_master(blocking=False):
     return _master["rows"]
 
 
-def _nearest_expiry(sym):
+def _search_contracts(sym, sc=None):
+    """Find one underlying's option contracts without the 150MB master.
+
+    The master download is cut short on this host, so most underlyings are
+    simply absent from it and their chains came back as None — which is why
+    cards kept saying "no tradable strike" for liquid stocks like SAIL. Angel
+    exposes a per-symbol search; asking it directly for the few names we
+    actually need is both smaller and more reliable.
+    """
+    cached = _search_cache.get(sym)
+    if cached and time.time() - cached["ts"] < 86400:
+        return cached["rows"]
+    try:
+        if sc is None:
+            from smart_client import _login
+            sc = _login()
+        if sc is None:
+            return []
+        rows = []
+        for seg in (("BFO",) if sym in BSE_UNDERLYINGS else ("NFO",)):
+            try:
+                resp = sc.searchScrip(seg, sym)
+            except Exception:
+                continue
+            for x in (resp or {}).get("data", []) or []:
+                ts = str(x.get("tradingsymbol") or x.get("symbol") or "")
+                if not (ts.endswith("CE") or ts.endswith("PE")):
+                    continue
+                if not ts.startswith(sym):
+                    continue
+                rows.append({"token": str(x.get("symboltoken") or x.get("token")),
+                             "symbol": ts, "name": sym,
+                             "expiry": x.get("expiry", ""),
+                             "strike": x.get("strike", 0),
+                             "instrumenttype": "OPTIDX" if sym in IDX_NAMES else "OPTSTK",
+                             "seg": seg})
+        _search_cache[sym] = {"ts": time.time(), "rows": rows}
+        if rows:
+            print(f"[optchain] searchScrip found {len(rows)} contracts for {sym}")
+        return rows
+    except Exception as e:
+        print(f"[optchain] searchScrip {sym} failed:", str(e)[:100])
+        return []
+
+
+def _nearest_expiry(sym, sc=None):
     rows = [x for x in _load_master() if x.get("name") == sym]
+    if not rows:
+        # Master is partial on this host — ask the exchange directly instead
+        # of giving up on the symbol.
+        rows = _search_contracts(sym, sc)
     if not rows:
         return None, []
     today = _ist().date()
@@ -271,7 +324,7 @@ def get_chain(sym, spot, sc=None):
             sc = _login()
         if sc is None:
             return None
-        tag, rows = _nearest_expiry(sym)
+        tag, rows = _nearest_expiry(sym, sc)
         if not rows:
             return None
         # keep strikes within +/-10% of spot
@@ -303,12 +356,23 @@ def get_chain(sym, spot, sc=None):
             if not row:
                 continue
             oi = float(row.get("opnInterest") or 0)
+            # "netChange" is the change in the option PRICE, not in open
+            # interest. It was being read as change-in-OI, which made the
+            # gamma read meaningless and every "OI unwinding" claim wrong.
+            # Angel does not publish change-in-OI on this endpoint, so it is
+            # derived by comparing against the previous poll instead.
+            prev = _oi_prev.get(str(row.get("symbolToken")))
+            chg_oi = (oi - prev) if prev is not None else 0.0
+            _oi_prev[str(row.get("symbolToken"))] = oi
             ltp = float(row.get("ltp") or 0)
             chg = float(row.get("netChange") or 0)
             vol = float(row.get("tradeVolume") or 0)
             side = "CE" if str(x.get("symbol", "")).endswith("CE") else "PE"
             (calls if side == "CE" else puts)[strike] = {
-                "oi": oi, "ltp": round(ltp, 2), "chg": chg, "vol": vol}
+                "oi": oi, "ltp": round(ltp, 2),
+                "chg": chg,                 # option price change
+                "chg_oi": round(chg_oi),    # change in open interest
+                "vol": vol}
 
         if not calls or not puts:
             return None
