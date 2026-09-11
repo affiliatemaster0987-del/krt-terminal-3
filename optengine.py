@@ -217,7 +217,7 @@ def best_strike(chain, spot, side, expected_move=None, ind=None):
             rejected += 1
             continue
         oi = float(v.get("oi") or 0)
-        chg_oi = float(v.get("chg") or 0)
+        chg_oi = float(v.get("chg_oi") or 0)
         vol = float(v.get("vol") or v.get("volume") or 0)
         if oi < MIN_OI and vol < 50000:
             rejected += 1
