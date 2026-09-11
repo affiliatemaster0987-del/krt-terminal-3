@@ -773,3 +773,14 @@ td.sec{font-size:.6rem;color:var(--dim)}
 .pb-spot{ font-family:'JetBrains Mono',monospace; font-size:.68rem;
   color:#57b7ff; margin:7px 0 5px }
 .pb-note{ font-size:.6rem; color:var(--dim); line-height:1.5 }
+
+/* trade-log stage bar */
+.stage{ display:flex; flex-wrap:wrap; align-items:center; gap:4px;
+  width:100%; margin-top:6px }
+.stage .st{ font-style:normal; font-size:.56rem; font-family:'JetBrains Mono',monospace;
+  padding:2px 7px; border-radius:4px; background:rgba(255,255,255,.04);
+  color:var(--dim) }
+.stage .st.on{ background:rgba(22,214,122,.16); color:#16d67a; font-weight:700 }
+.stage .st.dead{ opacity:.35 }
+.stage b{ color:var(--dim); font-size:.55rem }
+.stage em{ font-style:normal; font-size:.58rem; font-weight:700; margin-left:6px }
