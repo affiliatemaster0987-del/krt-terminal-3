@@ -638,6 +638,29 @@ $('zoneSend') && ($('zoneSend').onclick=()=>{
 });
 
 /* ---------- today's trade log ---------- */
+
+/* Where is this call right now — entry, past T1, past T2? A row that only
+   says RUNNING does not tell you whether to hold or book. */
+function stageBar(s){
+  const steps = [
+    {k:'ENTRY', done:true,          at:to12(s.ts)},
+    {k:'T1',    done:!!s.t1_at,     at:s.t1_at},
+    {k:'T2',    done:!!s.t2_at,     at:s.t2_at},
+    {k:'T3',    done:!!s.t3_at,     at:s.t3_at},
+  ];
+  const stopped = s.status==='SL HIT';
+  let where = 'At entry';
+  if(stopped)        where = `Stopped out${s.sl_at?` at ${s.sl_at}`:''}`;
+  else if(s.t3_at)   where = 'All targets done';
+  else if(s.t2_at)   where = 'Between T2 and T3 — trail the rest';
+  else if(s.t1_at)   where = 'Between T1 and T2 — part booked';
+  else if(s.pnl_pct>0) where = 'In profit, T1 not reached';
+  else if(s.pnl_pct<0) where = 'Underwater, stop intact';
+  return `<span class="stage">${steps.map(x=>
+    `<i class="st ${x.done?'on':''} ${stopped&&x.k!=='ENTRY'?'dead':''}">${x.k}${x.at&&x.done?` ${x.at}`:''}</i>`
+  ).join('<b>›</b>')}<em class="${stopped?'dn':'up'}">${where}</em></span>`;
+}
+
 function renderTradeLog(t){
   if(!$('tradeLog')||!t)return;
   const rows=(t.history||[]).filter(s=>s.date===(t.today_date||s.date));
@@ -666,8 +689,9 @@ function renderTradeLog(t){
       <b class="lg-sym">${s.sym}</b>
       <span class="chip ${s.side==='BUY'?'up':'dn'}">${s.side}</span>
       ${s.source==='INDEX'?'<span class="lg-tag idx">INDEX OPTION</span>':'<span class="lg-tag stk">STOCK</span>'}
-      <span class="lg-lv">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}</span>
+      <span class="lg-lv">E ${s.entry} · SL ${s.sl} · T1 ${s.t1}${s.t2?` · T2 ${s.t2}`:''}${s.t3?` · T3 ${s.t3}`:''}</span>
       ${res(s)}
+      ${stageBar(s)}
       <span class="lg-line">Given ${to12(s.ts)}${s.t1_at?` · T1 ✅ ${s.t1_at}`:''}${s.t2_at?` · T2 ✅ ${s.t2_at}`:''}${s.t3_at?` · T3 ✅ ${s.t3_at}`:''}${s.sl_at?` · SL ❌ ${s.sl_at}`:''}</span>
       ${s.done_at?`<span class="lg-done">at ${s.done_at}</span>`:''}
       ${s.pnl_pct!=null?`<span class="${s.pnl_pct>=0?'up':'dn'}">${s.pnl_pct>=0?'+':''}${s.pnl_pct}%</span>`:''}
